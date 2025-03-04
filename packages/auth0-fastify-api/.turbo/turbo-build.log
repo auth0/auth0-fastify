@@ -1,0 +1,23 @@
+
+
+> @auth0/auth0-fastify-api@1.0.0 build
+> tsup
+
+[1G[0K[34mCLI[39m Building entry: src/index.ts
+[34mCLI[39m Using tsconfig: tsconfig.json
+[34mCLI[39m tsup v8.4.0
+[34mCLI[39m Using tsup config: /Users/frederikprijck/Development/auth0/auth0-fastify/packages/auth0-fastify-api/tsup.config.ts
+[34mCLI[39m Target: es2022
+[34mCJS[39m Build start
+[34mESM[39m Build start
+[32mCJS[39m [1mdist/index.cjs     [22m[32m3.79 KB[39m
+[32mCJS[39m [1mdist/index.cjs.map [22m[32m5.15 KB[39m
+[32mCJS[39m ⚡️ Build success in 8ms
+[32mESM[39m [1mdist/index.js     [22m[32m2.24 KB[39m
+[32mESM[39m [1mdist/index.js.map [22m[32m5.10 KB[39m
+[32mESM[39m ⚡️ Build success in 8ms
+DTS Build start
+DTS ⚡️ Build success in 792ms
+DTS dist/index.d.cts 1021.00 B
+DTS dist/index.d.ts  1021.00 B
+[1G[0K⠙[1G[0K
