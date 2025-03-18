@@ -1,5 +1,5 @@
 {
-  "name": "auth0-server-js",
+  "name": "auth0-fastify",
   "version": "1.0.0",
   "workspaces": [
     "packages/*",
