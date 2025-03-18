@@ -1,4 +1,4 @@
-Auth0-Auth-JS Mono Repo, containing SDKs for implementing user authentication in JavaScript applications.
+Auth0-Fastify Mono Repo, containing SDKs for implementing user authentication in Fastify applications.
 
 ![Release](https://img.shields.io/npm/v/@auth0/auth0-auth-js)
 ![Downloads](https://img.shields.io/npm/dw/@auth0/auth0-auth-js)
@@ -8,9 +8,6 @@ Auth0-Auth-JS Mono Repo, containing SDKs for implementing user authentication in
 
 
 ## Packages
-- [`auth0-auth-js`](./packages/auth0-auth-js/README.md) - Authentication Client for JavaScript runtimes.
-- [`auth0-api-js`](./packages/auth0-api-js/README.md) - Authentication SDK for API's on JavaScript runtimes.
-- [`auth0-server-js`](./packages/auth0-server-js/README.md) - Authentication SDK for Server-Side Applications on JavaScript runtimes.
 - [`auth0-fastify`](./packages/auth0-fastify/README.md) - Authentication SDK for Fastify Applications on JavaScript runtimes.
 - [`auth0-fastify-api`](./packages/auth0-fastify-api/README.md) - Authentication SDK for Fastify API's on JavaScript runtimes.
 
@@ -42,12 +39,12 @@ $ npm run build
 We appreciate feedback and contribution to this repo! Before you get started, please read the following:
 
 - [Auth0's general contribution guidelines](https://github.com/auth0/open-source-template/blob/master/GENERAL-CONTRIBUTING.md)
-- [Auth0's code of conduct guidelines](https://github.com/auth0/auth0-server-js/blob/main/CODE-OF-CONDUCT.md)
+- [Auth0's code of conduct guidelines](https://github.com/auth0/auth0-fastify/blob/main/CODE-OF-CONDUCT.md)
 - [This repo's contribution guide](./CONTRIBUTING.md)
 
 ### Raise an issue
 
-To provide feedback or report a bug, please [raise an issue on our issue tracker](https://github.com/auth0/auth0-server-js/issues).
+To provide feedback or report a bug, please [raise an issue on our issue tracker](https://github.com/auth0/auth0-fastify/issues).
 
 ## Vulnerability Reporting
 
@@ -66,5 +63,5 @@ Please do not report security vulnerabilities on the public GitHub issue tracker
   Auth0 is an easy to implement, adaptable authentication and authorization platform. To learn more checkout <a href="https://auth0.com/why-auth0">Why Auth0?</a>
 </p>
 <p align="center">
-  This project is licensed under the MIT license. See the <a href="https://github.com/auth0/auth0-server-js/blob/main/packages/auth0-fastify/LICENSE"> LICENSE</a> file for more info.
+  This project is licensed under the MIT license. See the <a href="https://github.com/auth0/auth0-fastify/blob/main/packages/auth0-fastify/LICENSE"> LICENSE</a> file for more info.
 </p>
