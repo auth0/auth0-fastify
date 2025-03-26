@@ -60,7 +60,7 @@ export default fp(async function auth0Fastify(fastify: FastifyInstance, options:
       audience: options.audience,
       redirect_uri: redirectUri.toString(),
     },
-    transactionStore: new CookieTransactionStore(),
+    transactionStore: new CookieTransactionStore({ secret: options.sessionSecret }),
     stateStore: options.sessionStore
       ? new StatefulStateStore({
           ...options.sessionConfiguration,
