@@ -1,0 +1,27 @@
+name: Dummy
+
+on:
+  push:
+    branches: [chore/test]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  CACHE_KEY: "${{ github.ref }}-${{ github.run_id }}-${{ github.run_attempt }}"
+
+jobs:
+  dummy:
+    name: Build Package
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install dependencies
+        run: ls
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          npm-token: ${{ secrets.NPM_TOKEN }}
