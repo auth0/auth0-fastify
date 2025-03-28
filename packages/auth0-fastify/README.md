@@ -4,11 +4,10 @@ The Auth0 Fastify SDK is a library for implementing user authentication in Fasti
 ![Downloads](https://img.shields.io/npm/dw/@auth0/auth0-fastify)
 [![License](https://img.shields.io/:license-mit-blue.svg?style=flat)](https://opensource.org/licenses/MIT)
 
-📚 [Documentation](#documentation) - 🚀 [Getting Started](#getting-started) - 💻 [API Reference](https://auth0.github.io/auth0-fastify/) - 💬 [Feedback](#feedback)
+📚 [Documentation](#documentation) - 🚀 [Getting Started](#getting-started) - 💬 [Feedback](#feedback)
 
 ## Documentation
 
-- [QuickStart](https://auth0.com/docs/quickstart/webapp/fastify)- our guide for adding Auth0 to your Fastify app.
 - [Examples](https://github.com/auth0/auth0-fastify/blob/main/packages/auth0-fastify/EXAMPLES.md) - examples for your different use cases.
 - [Docs Site](https://auth0.com/docs) - explore our docs site and learn more about Auth0.
 
@@ -191,8 +190,8 @@ console.log(accessTokenResult.accessToken);
 We appreciate feedback and contribution to this repo! Before you get started, please read the following:
 
 - [Auth0's general contribution guidelines](https://github.com/auth0/open-source-template/blob/master/GENERAL-CONTRIBUTING.md)
-- [Auth0's code of conduct guidelines](https://github.com/auth0/auth0-fastify/blob/main/CODE-OF-CONDUCT.md)
-- [This repo's contribution guide](./../../CONTRIBUTING.md)
+- [Auth0's code of conduct guidelines](https://github.com/auth0/open-source-template/blob/master/CODE-OF-CONDUCT.md)
+- [This repo's contribution guide](https://github.com/auth0/auth0-fastify/blob/main/CONTRIBUTING.md)
 
 ### Raise an issue
 
