@@ -28,8 +28,7 @@
     "vitest": "^3.0.5"
   },
   "dependencies": {
-    "@auth0/auth0-auth-js": "file:../../auth0-auth0-auth-js-1.0.0.tgz",
-    "@auth0/auth0-server-js": "file:../../auth0-auth0-server-js-1.0.0.tgz",
+    "@auth0/auth0-server-js": "^1.0.0",
     "@fastify/cookie": "^11.0.2",
     "fastify": "^5.2.1",
     "fastify-plugin": "^5.0.1"
