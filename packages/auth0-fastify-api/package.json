@@ -2,6 +2,8 @@
   "name": "@auth0/auth0-fastify-api",
   "version": "1.0.0",
   "description": "Auth0 SDK for Fastify API's on JavaScript runtimes",
+  "author": "Auth0",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "build": "tsup",
@@ -34,5 +36,19 @@
   },
   "files": [
     "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+      "type": "git",
+      "url": "git://github.com/auth0/auth0-fastify.git"
+  },
+  "bugs": {
+      "url": "https://github.com/auth0/auth0-fastify/issues"
+  },
+  "homepage": "https://github.com/auth0/auth0-fastify#readme",
+  "keywords": [
+      "auth0"
   ]
 }
