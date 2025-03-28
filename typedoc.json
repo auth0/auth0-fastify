@@ -1,0 +1,22 @@
+{
+    "entryPoints": ["packages/*"],
+    "name": "Auth0 Fastify Monorepo",
+    "entryPointStrategy": "packages",
+    "includeVersion": false,
+    "navigationLinks": {
+        "Web App": "/modules/_auth0_auth0-fastify.html",
+        "API": "/modules/_auth0_auth0-fastify-api.html"
+    },
+    "navigation": {
+        "includeCategories": false,
+        "includeGroups": false,
+        "includeFolders": false,
+        "compactFolders": false,
+        "excludeReferences": true
+    },
+    "categorizeByGroup": false,
+    "packageOptions": {
+        "entryPoints": ["src/index.ts"],
+        "includeVersion": true
+    }
+}

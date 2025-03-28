@@ -1,0 +1,42 @@
+
+
+> @auth0/auth0-fastify-api@1.0.0 test
+> vitest run
+
+[1G[0K[?25l
+[1m[7m[36m RUN [39m[27m[22m [36mv3.0.8 [39m[90m/Users/frederikprijck/Development/auth0/auth0-fastify/packages/auth0-fastify-api[39m
+
+[?2026h
+[1m[33m ❯ [39m[22msrc/index.spec.ts[2m [queued][22m
+
+[2m Test Files [22m[1m[32m0 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m[1m[32m0 passed[39m[22m[90m (0)[39m
+[2m   Start at [22m13:56:52
+[2m   Duration [22m407ms
+[?2026l[?2026h[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K
+[1m[33m ❯ [39m[22msrc/index.spec.ts[2m 0/12[22m
+
+[2m Test Files [22m[1m[32m0 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m[1m[32m0 passed[39m[22m[90m (12)[39m
+[2m   Start at [22m13:56:52
+[2m   Duration [22m708ms
+[?2026l[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K[1A[K [32m✓[39m src/index.spec.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 66[2mms[22m[39m
+   [32m✓[39m should return 400 when no token
+   [32m✓[39m should return 200 when valid token
+   [32m✓[39m should return 401 when no issuer in token
+   [32m✓[39m should return 401 when invalid issuer in token
+   [32m✓[39m should return 401 when no audience in token
+   [32m✓[39m should return 401 when no iat in token
+   [32m✓[39m should return 401 when no exp in token
+   [32m✓[39m should return 401 when invalid audience in token
+   [32m✓[39m should throw when no audience configured
+   [32m✓[39m should return 403 when invalid scope in token
+   [32m✓[39m should return 200 when valid audience in token
+   [32m✓[39m should return 200 when valid scope in token
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m12 passed[39m[22m[90m (12)[39m
+[2m   Start at [22m 13:56:52
+[2m   Duration [22m 807ms[2m (transform 67ms, setup 0ms, collect 299ms, tests 66ms, environment 0ms, prepare 63ms)[22m
+
+[?25h[1G[0K⠙[1G[0K
