@@ -22,7 +22,7 @@ jobs:
 
     steps:
       - name: Install dependencies
-        run: ls
+        run: ls 
         env:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           npm-token: ${{ secrets.NPM_TOKEN }}
