@@ -17,7 +17,7 @@ jobs:
     environment: release
     strategy:
       matrix:
-        package: [auth0-fastify-api]
+        package: [auth0-fastify, auth0-fastify-api]
     steps:
       - uses: actions/checkout@v4
         with:
