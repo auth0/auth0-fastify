@@ -18,6 +18,7 @@ jobs:
   dummy:
     name: Build Package
     runs-on: ubuntu-latest
+    environment: release
 
     steps:
       - name: Install dependencies
