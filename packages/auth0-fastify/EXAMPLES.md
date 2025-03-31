@@ -5,6 +5,7 @@
   - [Configuring the mounted routes](#configuring-the-mounted-routes)
 - [Protecting Routes](#protecting-routes)
 - [Requesting an Access Token to call an API](#requesting-an-access-token-to-call-an-api)
+- [Advanced scenario's](#advanced-scenarios)
 
 ## Configuration
 
@@ -151,3 +152,20 @@ Retrieving the token can be achieved by using `getAccessToken`:
 const accessTokenResult = await fastify.auth0Client.getAccessToken({ request, reply });
 console.log(accessTokenResult.accessToken);
 ```
+
+## Advanced Scenario's
+
+The SDK allows for more advanced use-cases by exposing the underlying `ServerClient` instance from `@auth0/auth0-server-js` on the `FastifyInstance` as `auth0Client`:
+
+```ts
+fastify.get(
+  '/some-endpoint',
+  async (request, reply) => {
+    const user = await fastify.auth0Client!.getUser({ request, reply });
+    
+    // ...
+  }
+);
+```
+
+We recommend taking a look at the [Server-JS SDK examples](https://github.com/auth0/auth0-auth-js/blob/main/packages/auth0-server-js/EXAMPLES.md) for more advanced use-cases.
