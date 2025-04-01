@@ -53,7 +53,7 @@ afterEach(() => {
   server.resetHandlers();
 });
 
-test('should return 400 when no token', async () => {
+test('should return 401 when no token', async () => {
   const fastify = Fastify();
   fastify.register(fastifyAuth0Api, {
     domain: domain,
@@ -77,7 +77,7 @@ test('should return 400 when no token', async () => {
     url: '/test',
   });
 
-  expect(res.statusCode).toBe(400);
+  expect(res.statusCode).toBe(401);
   expect(res.json().error).toBe('invalid_request');
   expect(res.json().error_description).toBe('No Authorization provided');
 });

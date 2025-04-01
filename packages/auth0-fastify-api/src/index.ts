@@ -83,7 +83,7 @@ async function auth0FastifApi(fastify: FastifyInstance, options: Auth0FastifyApi
       const accessToken = getToken(request);
 
       if (!accessToken) {
-        return replyWithError(reply, 400, 'invalid_request', 'No Authorization provided');
+        return replyWithError(reply, 401, 'invalid_request', 'No Authorization provided');
       }
 
       try {
