@@ -53,7 +53,7 @@ afterEach(() => {
   server.resetHandlers();
 });
 
-test('should return 401 when no token', async () => {
+test('should return 401 when no authorization header', async () => {
   const fastify = Fastify();
   fastify.register(fastifyAuth0Api, {
     domain: domain,
@@ -80,6 +80,40 @@ test('should return 401 when no token', async () => {
   expect(res.statusCode).toBe(401);
   expect(res.json().error).toBe('invalid_request');
   expect(res.json().error_description).toBe('No Authorization provided');
+  expect(res.headers['www-authenticate']).toBe('Bearer');
+});
+
+test('should return 400 when invalid authorization header', async () => {
+  const fastify = Fastify();
+  fastify.register(fastifyAuth0Api, {
+    domain: domain,
+    audience: '<audience>',
+  });
+
+  fastify.register(() => {
+    fastify.get(
+      '/test',
+      {
+        preHandler: fastify.requireAuth(),
+      },
+      async () => {
+        return 'OK';
+      }
+    );
+  });
+
+  const res = await fastify.inject({
+    method: 'GET',
+    url: '/test',
+    headers: {
+      authorization: 'Bearer'
+    }
+  });
+
+  expect(res.statusCode).toBe(400);
+  expect(res.json().error).toBe('invalid_request');
+  expect(res.json().error_description).toBe('No Authorization provided');
+  expect(res.headers['www-authenticate']).toBe('Bearer error="invalid_request", error_description="No Authorization provided"');
 });
 
 test('should return 200 when valid token', async () => {
