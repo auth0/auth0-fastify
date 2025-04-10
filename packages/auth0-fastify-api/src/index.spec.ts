@@ -112,8 +112,8 @@ test('should return 400 when invalid authorization header', async () => {
 
   expect(res.statusCode).toBe(400);
   expect(res.json().error).toBe('invalid_request');
-  expect(res.json().error_description).toBe('No Authorization provided');
-  expect(res.headers['www-authenticate']).toBe('Bearer error="invalid_request", error_description="No Authorization provided"');
+  expect(res.json().error_description).toBe('Invalid Authorization provided');
+  expect(res.headers['www-authenticate']).toBe('Bearer error="invalid_request", error_description="Invalid Authorization provided"');
 });
 
 test('should return 200 when valid token', async () => {
