@@ -99,7 +99,7 @@ async function auth0FastifApi(fastify: FastifyInstance, options: Auth0FastifyApi
 
       if (!accessToken) {
         // If the authorization header was malformed, we need to return a 400.
-        return replyWithError(reply, 400, 'invalid_request', 'No Authorization provided');
+        return replyWithError(reply, 400, 'invalid_request', 'Invalid Authorization provided');
       }
 
       try {
