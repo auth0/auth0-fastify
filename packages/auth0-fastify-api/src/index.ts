@@ -35,9 +35,9 @@ export interface Auth0FastifyApiOptions {
 }
 
 export interface Token {
-  sub?: string;
-  aud?: string | string[];
-  iss?: string;
+  sub: string;
+  aud: string | string[];
+  iss: string;
   scope?: string;
 }
 
@@ -87,7 +87,8 @@ async function auth0FastifApi(fastify: FastifyInstance, options: Auth0FastifyApi
       }
 
       try {
-        const token: Token = await apiClient.verifyAccessToken({ accessToken });
+        const token = await apiClient.verifyAccessToken({ accessToken }) as Token;
+
         if (opts.scopes && !validateScopes(token, opts.scopes)) {
           return replyWithError(reply, 403, 'insufficient_scope', 'Insufficient scopes');
         }
