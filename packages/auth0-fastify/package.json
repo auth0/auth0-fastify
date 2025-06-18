@@ -33,7 +33,7 @@
     "vitest": "^3.0.5"
   },
   "dependencies": {
-    "@auth0/auth0-server-js": "^1.0.0",
+    "@auth0/auth0-server-js": "^1.0.2",
     "@fastify/cookie": "^11.0.2",
     "fastify": "^5.2.1",
     "fastify-plugin": "^5.0.1"
@@ -42,17 +42,17 @@
     "dist"
   ],
   "publishConfig": {
-      "access": "public"
+    "access": "public"
   },
   "repository": {
-      "type": "git",
-      "url": "git://github.com/auth0/auth0-fastify.git"
+    "type": "git",
+    "url": "git://github.com/auth0/auth0-fastify.git"
   },
   "bugs": {
-      "url": "https://github.com/auth0/auth0-fastify/issues"
+    "url": "https://github.com/auth0/auth0-fastify/issues"
   },
   "homepage": "https://github.com/auth0/auth0-fastify#readme",
   "keywords": [
-      "auth0"
+    "auth0"
   ]
 }

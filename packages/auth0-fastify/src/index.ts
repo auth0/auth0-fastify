@@ -1,14 +1,12 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
-import { ServerClient } from '@auth0/auth0-server-js';
+import { CookieTransactionStore, ServerClient, StatelessStateStore, StatefulStateStore } from '@auth0/auth0-server-js';
 import type { SessionConfiguration, SessionStore, StoreOptions } from './types.js';
-import { CookieTransactionStore } from './store/cookie-transaction-store.js';
-import { StatelessStateStore } from './store/stateless-state-store.js';
-import { StatefulStateStore } from './store/stateful-state-store.js';
 import { createRouteUrl, toSafeRedirect } from './utils.js';
+import { FastifyCookieHandler } from './store/fastify-cookie-handler.js';
 
 export * from './types.js';
-export { CookieTransactionStore } from './store/cookie-transaction-store.js';
+export { CookieTransactionStore } from '@auth0/auth0-server-js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -60,17 +58,17 @@ export default fp(async function auth0Fastify(fastify: FastifyInstance, options:
       audience: options.audience,
       redirect_uri: redirectUri.toString(),
     },
-    transactionStore: new CookieTransactionStore({ secret: options.sessionSecret }),
+    transactionStore: new CookieTransactionStore({ secret: options.sessionSecret }, new FastifyCookieHandler()),
     stateStore: options.sessionStore
       ? new StatefulStateStore({
           ...options.sessionConfiguration,
           secret: options.sessionSecret,
           store: options.sessionStore,
-        })
+        }, new FastifyCookieHandler())
       : new StatelessStateStore({
           ...options.sessionConfiguration,
           secret: options.sessionSecret,
-        }),
+        }, new FastifyCookieHandler()),
     stateIdentifier: options.sessionConfiguration?.cookie?.name,
     customFetch: options.customFetch,
   });
