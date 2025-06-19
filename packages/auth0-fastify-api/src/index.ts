@@ -65,25 +65,41 @@ async function auth0FastifApi(fastify: FastifyInstance, options: Auth0FastifyApi
     customFetch: options.customFetch,
   });
 
-  const replyWithError = (reply: FastifyReply, statusCode: number, error: string, errorDescription: string) => {
-    return reply
-      .code(statusCode)
-      .header(
-        'WWW-Authenticate',
-        `Bearer error="${error.replaceAll('"', '\\"')}", error_description="${errorDescription.replaceAll('"', '\\"')}"`
-      )
-      .send({
-        error: error,
-        error_description: errorDescription,
-      });
+  const replyWithError = (
+    reply: FastifyReply,
+    statusCode: number,
+    error: string,
+    errorDescription: string,
+    ommitHeaderDetails = false
+  ) => {
+    const headerValue = ommitHeaderDetails
+      ? `Bearer`
+      : `Bearer error="${error.replaceAll('"', '\\"')}", error_description="${errorDescription.replaceAll(
+          '"',
+          '\\"'
+        )}"`;
+
+    return reply.code(statusCode).header('WWW-Authenticate', headerValue).send({
+      error: error,
+      error_description: errorDescription,
+    });
   };
 
   fastify.decorate('requireAuth', function (opts: AuthRouteOptions = {}) {
     return async function (request: FastifyRequest, reply: FastifyReply) {
+      const authorizationHeader = request.headers.authorization;
+
+      if (!authorizationHeader) {
+        // If there is no authorization header,
+        // we need to return a 401 with just the supported scheme and no error/error_description in www-authenticate.
+        return replyWithError(reply, 401, 'invalid_request', 'No Authorization provided', true);
+      }
+
       const accessToken = getToken(request);
 
       if (!accessToken) {
-        return replyWithError(reply, 400, 'invalid_request', 'No Authorization provided');
+        // If the authorization header was malformed, we need to return a 400.
+        return replyWithError(reply, 400, 'invalid_request', 'Invalid Authorization provided');
       }
 
       try {
@@ -110,7 +126,6 @@ async function auth0FastifApi(fastify: FastifyInstance, options: Auth0FastifyApi
     return getToken(this);
   });
 }
-
 
 export default fp(auth0FastifApi);
 
