@@ -42,10 +42,21 @@ export interface Auth0FastifyOptions {
    * Optional, custom Fetch implementation to use.
    */
   customFetch?: typeof fetch;
+
+  routes?: {
+    login?: string;
+    callback?: string;
+    logout?: string;
+    backchannelLogout?: string;
+    connect?: string;
+    connectCallback?: string;
+    unconnect?: string;
+    unconnectCallback?: string;
+  }
 }
 
 export default fp(async function auth0Fastify(fastify: FastifyInstance, options: Auth0FastifyOptions) {
-  const callbackPath = '/auth/callback';
+  const callbackPath = options.routes?.callback ?? '/auth/callback';
   const redirectUri = createRouteUrl(callbackPath, options.appBaseUrl);
 
   const auth0Client = new ServerClient<StoreOptions>({
@@ -81,7 +92,7 @@ export default fp(async function auth0Fastify(fastify: FastifyInstance, options:
 
   if (shouldMountRoutes) {
     fastify.get(
-      '/auth/login',
+      options.routes?.login ?? '/auth/login',
       async (
         request: FastifyRequest<{
           Querystring: { returnTo?: string };
@@ -103,7 +114,7 @@ export default fp(async function auth0Fastify(fastify: FastifyInstance, options:
       }
     );
 
-    fastify.get('/auth/callback', async (request, reply) => {
+    fastify.get(options.routes?.callback ?? '/auth/callback', async (request, reply) => {
       const { appState } = await auth0Client.completeInteractiveLogin<{ returnTo: string } | undefined>(
         createRouteUrl(request.url, options.appBaseUrl),
         { request, reply }
@@ -112,7 +123,7 @@ export default fp(async function auth0Fastify(fastify: FastifyInstance, options:
       reply.redirect(appState?.returnTo ?? options.appBaseUrl);
     });
 
-    fastify.get('/auth/logout', async (request, reply) => {
+    fastify.get(options.routes?.logout ?? '/auth/logout', async (request, reply) => {
       const returnTo = options.appBaseUrl;
       const logoutUrl = await auth0Client.logout({ returnTo: returnTo.toString() }, { request, reply });
 
@@ -120,7 +131,7 @@ export default fp(async function auth0Fastify(fastify: FastifyInstance, options:
     });
 
     fastify.post(
-      '/auth/backchannel-logout',
+      options.routes?.backchannelLogout ?? '/auth/backchannel-logout',
       async (
         request: FastifyRequest<{
           Body: { logout_token?: string };
@@ -148,7 +159,7 @@ export default fp(async function auth0Fastify(fastify: FastifyInstance, options:
 
     if (shouldMountConnectRoutes) {
       fastify.get(
-        '/auth/connect',
+        options.routes?.connect ?? '/auth/connect',
         async (
           request: FastifyRequest<{
             Querystring: { connection: string; connectionScope: string; returnTo?: string };
@@ -166,7 +177,7 @@ export default fp(async function auth0Fastify(fastify: FastifyInstance, options:
           }
 
           const sanitizedReturnTo = toSafeRedirect(dangerousReturnTo || '/', options.appBaseUrl);
-          const callbackPath = '/auth/connect/callback';
+          const callbackPath = options.routes?.connectCallback ?? '/auth/connect/callback';
           const redirectUri = createRouteUrl(callbackPath, options.appBaseUrl);
           const linkUserUrl = await fastify.auth0Client!.startLinkUser(
             {
@@ -186,7 +197,7 @@ export default fp(async function auth0Fastify(fastify: FastifyInstance, options:
         }
       );
 
-      fastify.get('/auth/connect/callback', async (request, reply) => {
+      fastify.get(options.routes?.connectCallback ?? '/auth/connect/callback', async (request, reply) => {
         const { appState } = await fastify.auth0Client!.completeLinkUser<{ returnTo: string }>(
           createRouteUrl(request.url, options.appBaseUrl),
           {
@@ -199,7 +210,7 @@ export default fp(async function auth0Fastify(fastify: FastifyInstance, options:
       });
 
       fastify.get(
-        '/auth/unconnect',
+        options.routes?.unconnect ?? '/auth/unconnect',
         async (
           request: FastifyRequest<{
             Querystring: { connection: string; returnTo?: string };
@@ -217,7 +228,7 @@ export default fp(async function auth0Fastify(fastify: FastifyInstance, options:
           }
 
           const sanitizedReturnTo = toSafeRedirect(dangerousReturnTo || '/', options.appBaseUrl);
-          const callbackPath = '/auth/unconnect/callback';
+          const callbackPath = options.routes?.unconnectCallback ?? '/auth/unconnect/callback';
           const redirectUri = createRouteUrl(callbackPath, options.appBaseUrl);
           const linkUserUrl = await fastify.auth0Client!.startUnlinkUser(
             {
@@ -236,7 +247,7 @@ export default fp(async function auth0Fastify(fastify: FastifyInstance, options:
         }
       );
 
-      fastify.get('/auth/unconnect/callback', async (request, reply) => {
+      fastify.get(options.routes?.unconnectCallback ?? '/auth/unconnect/callback', async (request, reply) => {
         const { appState } = await fastify.auth0Client!.completeUnlinkUser<{ returnTo: string }>(
           createRouteUrl(request.url, options.appBaseUrl),
           {
