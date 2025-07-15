@@ -138,6 +138,32 @@ test('auth/login should put the appState in the transaction store', async () => 
   expect(cookieValue?.appState?.returnTo).toBe('http://localhost:3000/custom-return');
 });
 
+test('auth/login uses custom route when provided', async () => {
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    domain: domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    appBaseUrl: 'http://localhost:3000',
+    sessionSecret: '<secret>',
+    routes: {
+      login: '/custom-auth/login',
+      callback: '/custom-auth/callback',
+    },
+  });
+
+  const res = await fastify.inject({
+    method: 'GET',
+    url: '/custom-auth/login',
+  });
+  const url = new URL(res.headers['location']?.toString() ?? '');
+
+  expect(res.statusCode).toBe(302);
+  expect(url.host).toBe(domain);
+  expect(url.pathname).toBe('/authorize');
+  expect(url.searchParams.get('redirect_uri')).toBe('http://localhost:3000/custom-auth/callback');
+});
+
 test('auth/callback redirects to /', async () => {
   const fastify = Fastify();
   fastify.register(plugin, {
@@ -220,6 +246,36 @@ test('auth/callback redirects to returnTo in state', async () => {
   expect(url.searchParams.size).toBe(0);
 });
 
+test('auth/callback uses custom route when provided', async () => {
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    domain: domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    appBaseUrl: 'http://localhost:3000',
+    sessionSecret: '<secret>',
+    routes: {
+      callback: '/custom-auth/callback',
+    },
+  });
+
+  const cookieName = '__a0_tx';
+  const cookieValue = await encrypt({}, '<secret>', cookieName, Date.now() + 1000);
+  const res = await fastify.inject({
+    method: 'GET',
+    url: `/custom-auth/callback?code=123`,
+    headers: {
+      cookie: `${cookieName}=${cookieValue}`,
+    },
+  });
+  const url = new URL(res.headers['location']?.toString() ?? '');
+
+  expect(res.statusCode).toBe(302);
+  expect(url.host).toBe('localhost:3000');
+  expect(url.pathname).toBe('/');
+  expect(url.searchParams.size).toBe(0);
+});
+
 test('auth/logout redirects to logout', async () => {
   const fastify = Fastify();
   fastify.register(plugin, {
@@ -242,6 +298,30 @@ test('auth/logout redirects to logout', async () => {
   expect(url.searchParams.get('client_id')).toBe('<client_id>');
   expect(url.searchParams.get('post_logout_redirect_uri')).toBe('http://localhost:3000');
   expect(url.searchParams.size).toBe(2);
+});
+
+test('auth/logout uses custom route when provided', async () => {
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    domain: domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    appBaseUrl: 'http://localhost:3000',
+    sessionSecret: '<secret>',
+    routes: {
+      logout: '/custom-auth/logout',
+    },
+  });
+
+  const res = await fastify.inject({
+    method: 'GET',
+    url: '/custom-auth/logout',
+  });
+  const url = new URL(res.headers['location']?.toString() || '');
+
+  expect(res.statusCode).toBe(302);
+  expect(url.host).toBe(domain);
+  expect(url.pathname).toBe('/logout');
 });
 
 test('auth/connect returns 400 when connection not provided', async () => {
@@ -421,6 +501,49 @@ test('auth/connect should put the appState in the transaction store', async () =
   expect(cookieValue?.appState?.returnTo).toBe('http://localhost:3000/custom-return');
 });
 
+test('auth/connect uses custom route when provided', async () => {
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    domain: domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    appBaseUrl: 'http://localhost:3000',
+    sessionSecret: '<secret>',
+    mountConnectRoutes: true,
+    routes: {
+      connect: '/custom-auth/connect',
+    },
+  });
+
+  const stateData: StateData = {
+    user: {
+      sub: '<sub>',
+    },
+    idToken: '<id_token>',
+    accessToken: '<access_token>',
+    refreshToken: '<refresh_token>',
+    tokenSets: [],
+    internal: {
+      sid: '<sid>',
+      createdAt: 1234567890,
+    },
+  };
+  const cookieValue = await encrypt(stateData, '<secret>', '__a0_session', Date.now() + 1000);
+  const res = await fastify.inject({
+    method: 'GET',
+    url: '/custom-auth/connect?connection=<connection>&connectionScope=<connection_scope>',
+    headers: {
+      cookie: `__a0_session.0=${cookieValue}`,
+    },
+  });
+
+  const url = new URL(res.headers['location']?.toString() ?? '');
+
+  expect(res.statusCode).toBe(302);
+  expect(url.host).toBe(domain);
+  expect(url.pathname).toBe('/authorize');
+});
+
 test('auth/connect/callback redirects to /', async () => {
   const fastify = Fastify();
   fastify.register(plugin, {
@@ -503,6 +626,37 @@ test('auth/connect/callback redirects to returnTo in state', async () => {
   expect(res.statusCode).toBe(302);
   expect(url.host).toBe('localhost:3000');
   expect(url.pathname).toBe('/custom-return');
+  expect(url.searchParams.size).toBe(0);
+});
+
+test('auth/connect/callback uses custom route when provided', async () => {
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    domain: domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    appBaseUrl: 'http://localhost:3000',
+    sessionSecret: '<secret>',
+    mountConnectRoutes: true,
+    routes: {
+      connectCallback: '/custom-auth/connect/callback',
+    },
+  });
+
+  const cookieName = '__a0_tx';
+  const cookieValue = await encrypt({}, '<secret>', cookieName, Date.now() + 1000);
+  const res = await fastify.inject({
+    method: 'GET',
+    url: `/custom-auth/connect/callback?code=123`,
+    headers: {
+      cookie: `${cookieName}=${cookieValue}`,
+    },
+  });
+  const url = new URL(res.headers['location']?.toString() ?? '');
+
+  expect(res.statusCode).toBe(302);
+  expect(url.host).toBe('localhost:3000');
+  expect(url.pathname).toBe('/');
   expect(url.searchParams.size).toBe(0);
 });
 
@@ -681,6 +835,52 @@ test('auth/unconnect should put the appState in the transaction store', async ()
   expect(cookieValue?.appState?.returnTo).toBe('http://localhost:3000/custom-return');
 });
 
+test('auth/unconnect uses custom route when provided', async () => {
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    domain: domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    appBaseUrl: 'http://localhost:3000',
+    sessionSecret: '<secret>',
+    mountConnectRoutes: true,
+    routes: {
+      unconnect: '/custom-auth/unconnect',
+      unconnectCallback: '/custom-auth/unconnect/callback',
+    },
+  });
+
+  const stateData: StateData = {
+    user: {
+      sub: '<sub>',
+    },
+    idToken: '<id_token>',
+    accessToken: '<access_token>',
+    refreshToken: '<refresh_token>',
+    tokenSets: [],
+    internal: {
+      sid: '<sid>',
+      createdAt: 1234567890,
+    },
+  };
+  const cookieValue = await encrypt(stateData, '<secret>', '__a0_session', Date.now() + 1000);
+  const res = await fastify.inject({
+    method: 'GET',
+    url: '/custom-auth/unconnect?connection=<connection>',
+    headers: {
+      cookie: `__a0_session.0=${cookieValue}`,
+    },
+  });
+
+  const url = new URL(res.headers['location']?.toString() ?? '');
+
+  expect(res.statusCode).toBe(302);
+  expect(url.host).toBe(domain);
+  expect(url.pathname).toBe('/authorize');
+  expect(url.searchParams.get('client_id')).toBe('<client_id>');
+  expect(url.searchParams.get('redirect_uri')).toBe('http://localhost:3000/custom-auth/unconnect/callback');
+});
+
 test('auth/unconnect/callback redirects to /', async () => {
   const fastify = Fastify();
   fastify.register(plugin, {
@@ -763,5 +963,36 @@ test('auth/unconnect/callback redirects to returnTo in state', async () => {
   expect(res.statusCode).toBe(302);
   expect(url.host).toBe('localhost:3000');
   expect(url.pathname).toBe('/custom-return');
+  expect(url.searchParams.size).toBe(0);
+});
+
+test('auth/unconnect/callback uses custom route when provided', async () => {
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    domain: domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    appBaseUrl: 'http://localhost:3000',
+    sessionSecret: '<secret>',
+    mountConnectRoutes: true,
+    routes: {
+      unconnectCallback: '/custom-auth/unconnect/callback',
+    },
+  });
+
+  const cookieName = '__a0_tx';
+  const cookieValue = await encrypt({}, '<secret>', cookieName, Date.now() + 1000);
+  const res = await fastify.inject({
+    method: 'GET',
+    url: `/custom-auth/unconnect/callback?code=123`,
+    headers: {
+      cookie: `${cookieName}=${cookieValue}`,
+    },
+  });
+  const url = new URL(res.headers['location']?.toString() ?? '');
+
+  expect(res.statusCode).toBe(302);
+  expect(url.host).toBe('localhost:3000');
+  expect(url.pathname).toBe('/');
   expect(url.searchParams.size).toBe(0);
 });
