@@ -1,3 +1,4 @@
+![Auth0-Fastify](assets/images/banner.png)
 Auth0-Fastify Mono Repo, containing SDKs for implementing user authentication in Fastify applications.
 
 ![Release](https://img.shields.io/npm/v/@auth0/auth0-auth-js)
@@ -6,8 +7,8 @@ Auth0-Fastify Mono Repo, containing SDKs for implementing user authentication in
 
 📚 [Packages](#packages) - 💬 [Feedback](#feedback)
 
-
 ## Packages
+
 - [`auth0-fastify`](./packages/auth0-fastify/README.md) - Authentication SDK for Fastify Applications on JavaScript runtimes.
 - [`auth0-fastify-api`](./packages/auth0-fastify-api/README.md) - Authentication SDK for Fastify API's on JavaScript runtimes.
 
@@ -21,11 +22,13 @@ The following examples can be found in the examples directory:
 Before running the examples, you need to install the dependencies for the monorepo and build all the packages.
 
 1. Install depedencies
+
 ```bash
 $ npm install
 ```
 
 2. Build all packages
+
 ```bash
 $ npm run build
 ```
