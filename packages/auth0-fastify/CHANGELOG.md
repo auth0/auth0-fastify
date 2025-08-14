@@ -1,5 +1,11 @@
 # Change Log
 
+## [v1.0.3](https://github.com/auth0/auth0-fastify/releases/tag/auth0-fastify-v1.0.3) (2025-08-14)
+[Full Changelog](https://github.com/auth0/auth0-fastify/compare/auth0-fastify-v1.0.2...auth0-fastify-v1.0.3)
+
+**Fixed**
+- feat: Allow to configure the routes for the mounted endpoints [#22](https://github.com/auth0/auth0-fastify/pull/22) ([frederikprijck](https://github.com/frederikprijck))
+
 ## [v1.0.2](https://github.com/auth0/auth0-fastify/releases/tag/auth0-fastify-v1.0.2) (2025-05-20)
 [Full Changelog](https://github.com/auth0/auth0-fastify/compare/auth0-fastify-v1.0.1...auth0-fastify-v1.0.2)
 
