@@ -35,7 +35,7 @@
   "dependencies": {
     "@auth0/auth0-server-js": "^1.0.2",
     "@fastify/cookie": "^11.0.2",
-    "fastify": "5.3.2",
+    "fastify": "^5.3.2",
     "fastify-plugin": "^5.0.1"
   },
   "files": [
