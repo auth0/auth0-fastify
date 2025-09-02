@@ -1,5 +1,11 @@
 # Change Log
 
+## [v1.0.3](https://github.com/auth0/auth0-fastify/releases/tag/auth0-fastify-api-v1.0.3) (2025-08-14)
+[Full Changelog](https://github.com/auth0/auth0-fastify/compare/auth0-fastify-api-v1.0.2...auth0-fastify-api-v1.0.2)
+
+**Fixed**
+- fix: correctly mark iss, sub, and aud claims as required [#21](https://github.com/auth0/auth0-fastify/pull/21) ([frederikprijck](https://github.com/frederikprijck))
+
 ## [v1.0.2](https://github.com/auth0/auth0-fastify/releases/tag/auth0-fastify-api-v1.0.2) (2025-05-19)
 [Full Changelog](https://github.com/auth0/auth0-fastify/compare/auth0-fastify-api-v1.0.1...auth0-fastify-api-v1.0.2)
 
