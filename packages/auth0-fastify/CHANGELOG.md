@@ -1,6 +1,6 @@
 # Change Log
 
-## [v1.1.0](https://github.com/auth0/auth0-fastify/releases/tag/auth0-fastify-v1.1.0) (2025-09-2)
+## [v1.1.0](https://github.com/auth0/auth0-fastify/releases/tag/auth0-fastify-v1.1.0) (2025-09-02)
 [Full Changelog](https://github.com/auth0/auth0-fastify/compare/auth0-fastify-v1.0.2...auth0-fastify-v1.1.0)
 
 **Added**
