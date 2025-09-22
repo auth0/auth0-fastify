@@ -3,6 +3,7 @@
 - [Configuration](#configuration)
   - [Basic configuration](#basic-configuration)
   - [Configuring the mounted routes](#configuring-the-mounted-routes)
+- [The `ServerClient` instance](#the-serverclient-instance)
 - [Protecting Routes](#protecting-routes)
 - [Requesting an Access Token to call an API](#requesting-an-access-token-to-call-an-api)
 
@@ -97,6 +98,12 @@ fastify.register(fastifyAuth0, {
   },
 });
 ```
+
+## The `ServerClient` instance
+
+Once the plugin is registered, an instance of the Auth0 `ServerClient` is available via `fastify.auth0Client`. This instance can be used to call any of the methods available on the `ServerClient`, such as `getUser()`, `getSession()`, and `getAccessToken()`.
+
+For the complete list of available methods, please refer to the [@auth0/auth0-server-js SDK documentation](https://github.com/auth0/auth0-auth-js/blob/main/packages/auth0-server-js/README.md).
 
 ## Protecting Routes
 
