@@ -1,3 +1,4 @@
+TEST CI
 ![Auth0-Fastify](assets/images/banner.png)
 Auth0-Fastify Mono Repo, containing SDKs for implementing user authentication in Fastify applications.
 
