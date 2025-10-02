@@ -46,6 +46,12 @@ fastify.register(fastifyAuth0, {
 });
 ```
 
+## The `ApiClient` instance
+
+Once the plugin is registered, an instance of the Auth0 `ApiClient` is available via `fastify.auth0Client`. This instance can be used to call any of the methods available on the `ApiClient`, such as `verifyAccessToken()` and `getAccessTokenForConnection()`.
+
+For the complete list of available methods, please refer to the [@auth0/auth0-api-js SDK documentation](https://github.com/auth0/auth0-auth-js/blob/main/packages/auth0-api-js/README.md).
+
 ## Protecting API Routes
 
 In order to protect an API route, you can use the SDK's `requireAuth()` method in a preHandler:
