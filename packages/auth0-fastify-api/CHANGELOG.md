@@ -1,7 +1,13 @@
 # Change Log
 
+## [v1.1.0](https://github.com/auth0/auth0-fastify/releases/tag/auth0-fastify-api-v1.1.0) (2025-10-02)
+[Full Changelog](https://github.com/auth0/auth0-fastify/compare/auth0-fastify-api-v1.0.3...auth0-fastify-api-v1.1.0)
+
+**Added**
+- feat: decorate fastify instance with auth0Client[#32](https://github.com/auth0/auth0-fastify/pull/32) ([guabu](https://github.com/guabu))
+
 ## [v1.0.3](https://github.com/auth0/auth0-fastify/releases/tag/auth0-fastify-api-v1.0.3) (2025-08-14)
-[Full Changelog](https://github.com/auth0/auth0-fastify/compare/auth0-fastify-api-v1.0.2...auth0-fastify-api-v1.0.2)
+[Full Changelog](https://github.com/auth0/auth0-fastify/compare/auth0-fastify-api-v1.0.2...auth0-fastify-api-v1.0.3)
 
 **Fixed**
 - fix: correctly mark iss, sub, and aud claims as required [#21](https://github.com/auth0/auth0-fastify/pull/21) ([frederikprijck](https://github.com/frederikprijck))
