@@ -1,4 +1,11 @@
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type {
+  FastifyInstance,
+  FastifyRequest,
+  RawServerBase,
+  RawRequestDefaultExpression,
+  RawReplyDefaultExpression,
+  RawServerDefault,
+} from 'fastify';
 import fp from 'fastify-plugin';
 import { CookieTransactionStore, ServerClient, StatelessStateStore, StatefulStateStore } from '@auth0/auth0-server-js';
 import type { SessionConfiguration, SessionStore, StoreOptions } from './types.js';
@@ -9,12 +16,20 @@ export * from './types.js';
 export { CookieTransactionStore } from '@auth0/auth0-server-js';
 
 declare module 'fastify' {
-  interface FastifyInstance {
-    auth0Client: ServerClient<StoreOptions> | undefined;
+  interface FastifyInstance<
+    RawServer extends RawServerBase = RawServerDefault,
+    RawRequest extends RawRequestDefaultExpression<RawServer> = RawRequestDefaultExpression<RawServer>,
+    RawReply extends RawReplyDefaultExpression<RawServer> = RawReplyDefaultExpression<RawServer>
+  > {
+    auth0Client: ServerClient<StoreOptions<RawServer, RawRequest, RawReply>> | undefined;
   }
 }
 
-export interface Auth0FastifyOptions {
+export interface Auth0FastifyOptions<
+  RawServer extends RawServerBase = RawServerDefault,
+  RawRequest extends RawRequestDefaultExpression<RawServer> = RawRequestDefaultExpression<RawServer>,
+  RawReply extends RawReplyDefaultExpression<RawServer> = RawReplyDefaultExpression<RawServer>
+> {
   domain: string;
   clientId: string;
   clientSecret?: string;
@@ -26,7 +41,7 @@ export interface Auth0FastifyOptions {
   pushedAuthorizationRequests?: boolean;
 
   sessionSecret: string;
-  sessionStore?: SessionStore;
+  sessionStore?: SessionStore<RawServer, RawRequest, RawReply>;
   sessionConfiguration?: SessionConfiguration;
   /**
    * Whether to mount the default routes for login, logout, callback and profile.
@@ -55,11 +70,18 @@ export interface Auth0FastifyOptions {
   };
 }
 
-export default fp(async function auth0Fastify(fastify: FastifyInstance, options: Auth0FastifyOptions) {
+export default fp(async function auth0Fastify<
+  RawServer extends RawServerBase = RawServerDefault,
+  RawRequest extends RawRequestDefaultExpression<RawServer> = RawRequestDefaultExpression<RawServer>,
+  RawReply extends RawReplyDefaultExpression<RawServer> = RawReplyDefaultExpression<RawServer>
+>(
+  fastify: FastifyInstance<RawServer, RawRequest, RawReply>,
+  options: Auth0FastifyOptions<RawServer, RawRequest, RawReply>
+) {
   const callbackPath = options.routes?.callback ?? '/auth/callback';
   const redirectUri = createRouteUrl(callbackPath, options.appBaseUrl);
 
-  const auth0Client = new ServerClient<StoreOptions>({
+  const auth0Client = new ServerClient<StoreOptions<RawServer, RawRequest, RawReply>>({
     domain: options.domain,
     clientId: options.clientId,
     clientSecret: options.clientSecret,
@@ -69,7 +91,10 @@ export default fp(async function auth0Fastify(fastify: FastifyInstance, options:
       audience: options.audience,
       redirect_uri: redirectUri.toString(),
     },
-    transactionStore: new CookieTransactionStore({ secret: options.sessionSecret }, new FastifyCookieHandler()),
+    transactionStore: new CookieTransactionStore(
+      { secret: options.sessionSecret },
+      new FastifyCookieHandler<RawServer, RawRequest, RawReply>()
+    ),
     stateStore: options.sessionStore
       ? new StatefulStateStore(
           {
@@ -77,14 +102,14 @@ export default fp(async function auth0Fastify(fastify: FastifyInstance, options:
             secret: options.sessionSecret,
             store: options.sessionStore,
           },
-          new FastifyCookieHandler()
+          new FastifyCookieHandler<RawServer, RawRequest, RawReply>()
         )
       : new StatelessStateStore(
           {
             ...options.sessionConfiguration,
             secret: options.sessionSecret,
           },
-          new FastifyCookieHandler()
+          new FastifyCookieHandler<RawServer, RawRequest, RawReply>()
         ),
     stateIdentifier: options.sessionConfiguration?.cookie?.name,
     customFetch: options.customFetch,
@@ -100,9 +125,13 @@ export default fp(async function auth0Fastify(fastify: FastifyInstance, options:
     fastify.get(
       options.routes?.login ?? '/auth/login',
       async (
-        request: FastifyRequest<{
-          Querystring: { returnTo?: string };
-        }>,
+        request: FastifyRequest<
+          {
+            Querystring: { returnTo?: string };
+          },
+          RawServer,
+          RawRequest
+        >,
         reply
       ) => {
         const dangerousReturnTo = request.query.returnTo;
@@ -139,9 +168,13 @@ export default fp(async function auth0Fastify(fastify: FastifyInstance, options:
     fastify.post(
       options.routes?.backchannelLogout ?? '/auth/backchannel-logout',
       async (
-        request: FastifyRequest<{
-          Body: { logout_token?: string };
-        }>,
+        request: FastifyRequest<
+          {
+            Body: { logout_token?: string };
+          },
+          RawServer,
+          RawRequest
+        >,
         reply
       ) => {
         const logoutToken = request.body.logout_token;
@@ -167,9 +200,13 @@ export default fp(async function auth0Fastify(fastify: FastifyInstance, options:
       fastify.get(
         options.routes?.connect ?? '/auth/connect',
         async (
-          request: FastifyRequest<{
-            Querystring: { connection: string; connectionScope: string; returnTo?: string };
-          }>,
+          request: FastifyRequest<
+            {
+              Querystring: { connection: string; connectionScope: string; returnTo?: string };
+            },
+            RawServer,
+            RawRequest
+          >,
           reply
         ) => {
           const { connection, connectionScope, returnTo } = request.query;
@@ -218,9 +255,13 @@ export default fp(async function auth0Fastify(fastify: FastifyInstance, options:
       fastify.get(
         options.routes?.unconnect ?? '/auth/unconnect',
         async (
-          request: FastifyRequest<{
-            Querystring: { connection: string; returnTo?: string };
-          }>,
+          request: FastifyRequest<
+            {
+              Querystring: { connection: string; returnTo?: string };
+            },
+            RawServer,
+            RawRequest
+          >,
           reply
         ) => {
           const { connection, returnTo } = request.query;

@@ -1,16 +1,35 @@
-import type { FastifyReply, FastifyRequest } from 'fastify';
+import type {
+  FastifyReply,
+  FastifyRequest,
+  RawServerBase,
+  RawRequestDefaultExpression,
+  RawReplyDefaultExpression,
+  RawServerDefault,
+  RouteGenericInterface,
+} from 'fastify';
 import { LogoutTokenClaims, StateData } from '@auth0/auth0-server-js';
 
-export interface StoreOptions {
-  request: FastifyRequest;
-  reply: FastifyReply;
+export interface StoreOptions<
+  RawServer extends RawServerBase = RawServerDefault,
+  RawRequest extends RawRequestDefaultExpression<RawServer> = RawRequestDefaultExpression<RawServer>,
+  RawReply extends RawReplyDefaultExpression<RawServer> = RawReplyDefaultExpression<RawServer>
+> {
+  request: FastifyRequest<RouteGenericInterface, RawServer, RawRequest>;
+  reply: FastifyReply<RouteGenericInterface, RawServer, RawRequest, RawReply>;
 }
 
-export interface SessionStore {
+export interface SessionStore<
+  RawServer extends RawServerBase = RawServerDefault,
+  RawRequest extends RawRequestDefaultExpression<RawServer> = RawRequestDefaultExpression<RawServer>,
+  RawReply extends RawReplyDefaultExpression<RawServer> = RawReplyDefaultExpression<RawServer>
+> {
   delete(identifier: string): Promise<void>;
   set(identifier: string, stateData: StateData): Promise<void>;
   get(identifier: string): Promise<StateData | undefined>;
-  deleteByLogoutToken(claims: LogoutTokenClaims, options?: StoreOptions | undefined): Promise<void>;
+  deleteByLogoutToken(
+    claims: LogoutTokenClaims,
+    options?: StoreOptions<RawServer, RawRequest, RawReply> | undefined
+  ): Promise<void>;
 }
 
 export interface SessionCookieOptions {
