@@ -36,7 +36,6 @@ declare module 'fastify' {
      * We pass-through the FastifyInstance generics to ensure compatibility with different server types.
      */
     auth0Client: Auth0Client<RawServer, RawRequest, RawReply>| undefined;
-
   }
 }
 
@@ -341,6 +340,5 @@ export default fp(async function auth0Fastify<
     });
   });
 
-  fastify.decorate('auth0Client', toFastifyInstance(fastify, auth0Client));
-  fastify.decorate('__auth0RequestContext', auth0RequestContext);
+  fastify.decorate('auth0Client', toFastifyInstance(auth0Client, auth0RequestContext));
 });
