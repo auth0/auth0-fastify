@@ -7,7 +7,23 @@ import type {
   RawServerDefault,
   RouteGenericInterface,
 } from 'fastify';
-import { LogoutTokenClaims, StateData } from '@auth0/auth0-server-js';
+import {
+  AccessTokenForConnectionOptions,
+  ConnectionTokenSet,
+  LoginBackchannelOptions,
+  LoginBackchannelResult,
+  LogoutOptions,
+  LogoutTokenClaims,
+  SessionData,
+  StartInteractiveLoginOptions,
+  StartLinkUserOptions,
+  StartUnlinkUserOptions,
+  StateData,
+  TokenSet,
+  UserClaims,
+} from '@auth0/auth0-server-js';
+
+import { AuthorizationDetails } from '@auth0/auth0-auth-js';
 
 /**
  * Options for accessing the Fastify request and reply objects.
@@ -93,4 +109,65 @@ export interface SessionConfiguration {
    * The options for the session cookie.
    */
   cookie?: SessionCookieOptions;
+}
+
+export interface Auth0Client<
+  RawServer extends RawServerBase = RawServerDefault,
+  RawRequest extends RawRequestDefaultExpression<RawServer> = RawRequestDefaultExpression<RawServer>,
+  RawReply extends RawReplyDefaultExpression<RawServer> = RawReplyDefaultExpression<RawServer>
+> {
+  /**
+   * Starts an interactive login flow by generating the authorization URL and storing the necessary transaction data.
+   * @param options Options for starting the interactive login flow.
+   * @deprecated @param storeOptions
+   * @returns
+   */
+  startInteractiveLogin: (
+    options?: StartInteractiveLoginOptions,
+    storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
+  ) => Promise<URL>;
+  completeInteractiveLogin: <TAppState = unknown>(
+    url: URL,
+    storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
+  ) => Promise<{
+    appState?: TAppState;
+    authorizationDetails?: AuthorizationDetails[];
+  }>;
+  getUser(storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>): Promise<UserClaims | undefined>;
+  getSession(storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>): Promise<SessionData | undefined>;
+  getAccessToken(storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>): Promise<TokenSet>;
+  getAccessTokenForConnection: (
+    options: AccessTokenForConnectionOptions,
+    storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
+  ) => Promise<ConnectionTokenSet>;
+  loginBackchannel: (
+    options: LoginBackchannelOptions,
+    storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
+  ) => Promise<LoginBackchannelResult>;
+  logout: (options: LogoutOptions, storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>) => Promise<URL>;
+  handleBackchannelLogout: (
+    logoutToken: string,
+    storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
+  ) => Promise<void>;
+
+  startLinkUser: (
+    options: StartLinkUserOptions,
+    storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
+  ) => Promise<URL>;
+  completeLinkUser: <TAppState = unknown>(
+    url: URL,
+    storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
+  ) => Promise<{
+    appState?: TAppState;
+  }>;
+  startUnlinkUser: (
+    options: StartUnlinkUserOptions,
+    storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
+  ) => Promise<URL>;
+  completeUnlinkUser: <TAppState = unknown>(
+    url: URL,
+    storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
+  ) => Promise<{
+    appState?: TAppState;
+  }>;
 }
