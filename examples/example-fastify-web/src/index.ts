@@ -1,4 +1,4 @@
-import Fastify, { FastifyReply, FastifyRequest, RouteGenericInterface } from 'fastify';
+import Fastify, { FastifyReply, FastifyRequest } from 'fastify';
 import fastifyStatic from '@fastify/static';
 import fastifyView from '@fastify/view';
 import fastifyAuth0 from '@auth0/auth0-fastify';
@@ -6,19 +6,9 @@ import ejs from 'ejs';
 import 'dotenv/config';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readFileSync } from 'node:fs';
-import { Http2SecureServer, Http2ServerRequest, Http2ServerResponse } from 'node:http2';
 
 const fastify = Fastify({
   logger: true,
-  http2: true,
-
-  // Use `mkcert localhost 127.0.0.1 ::1` in the `examples/example-fastify-web` directory to generate these files
-  https: {
-    allowHTTP1: true,
-    key: readFileSync('./localhost+2-key.pem'),
-    cert: readFileSync('./localhost+2.pem')
-  }
 });
 
 // Fix to use __dirname in ES modules
@@ -53,8 +43,8 @@ fastify.get('/', async (request, reply) => {
 });
 
 async function hasSessionPreHandler(
-  request: FastifyRequest<RouteGenericInterface, Http2SecureServer, Http2ServerRequest>,
-  reply: FastifyReply<RouteGenericInterface, Http2SecureServer, Http2ServerRequest, Http2ServerResponse<Http2ServerRequest>>
+  request: FastifyRequest,
+  reply: FastifyReply
 ) {
   const session = await fastify.auth0Client!.getSession();
 
