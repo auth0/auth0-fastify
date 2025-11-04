@@ -52,7 +52,7 @@ export interface Auth0FastifyOptions {
     connectCallback?: string;
     unconnect?: string;
     unconnectCallback?: string;
-  }
+  };
 }
 
 export default fp(async function auth0Fastify(fastify: FastifyInstance, options: Auth0FastifyOptions) {
@@ -71,15 +71,21 @@ export default fp(async function auth0Fastify(fastify: FastifyInstance, options:
     },
     transactionStore: new CookieTransactionStore({ secret: options.sessionSecret }, new FastifyCookieHandler()),
     stateStore: options.sessionStore
-      ? new StatefulStateStore({
-          ...options.sessionConfiguration,
-          secret: options.sessionSecret,
-          store: options.sessionStore,
-        }, new FastifyCookieHandler())
-      : new StatelessStateStore({
-          ...options.sessionConfiguration,
-          secret: options.sessionSecret,
-        }, new FastifyCookieHandler()),
+      ? new StatefulStateStore(
+          {
+            ...options.sessionConfiguration,
+            secret: options.sessionSecret,
+            store: options.sessionStore,
+          },
+          new FastifyCookieHandler()
+        )
+      : new StatelessStateStore(
+          {
+            ...options.sessionConfiguration,
+            secret: options.sessionSecret,
+          },
+          new FastifyCookieHandler()
+        ),
     stateIdentifier: options.sessionConfiguration?.cookie?.name,
     customFetch: options.customFetch,
   });

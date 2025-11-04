@@ -133,7 +133,7 @@ test('auth/login should put the appState in the transaction store', async () => 
   });
   const cookieName = '__a0_tx';
   const cookieValueRaw = fastify.parseCookie(res.headers['set-cookie']?.toString() as string)[cookieName] as string;
-  const cookieValue = await decrypt(cookieValueRaw, '<secret>', '__a0_tx') as { appState: { returnTo: string } };
+  const cookieValue = (await decrypt(cookieValueRaw, '<secret>', '__a0_tx')) as { appState: { returnTo: string } };
 
   expect(cookieValue?.appState?.returnTo).toBe('http://localhost:3000/custom-return');
 });
@@ -229,7 +229,12 @@ test('auth/callback redirects to returnTo in state', async () => {
   });
 
   const cookieName = '__a0_tx';
-  const cookieValue = await encrypt({ appState: { returnTo: 'http://localhost:3000/custom-return' } }, '<secret>', cookieName, Date.now() + 1000);
+  const cookieValue = await encrypt(
+    { appState: { returnTo: 'http://localhost:3000/custom-return' } },
+    '<secret>',
+    cookieName,
+    Date.now() + 1000
+  );
   const res = await fastify.inject({
     method: 'GET',
     url: `/auth/callback?code=123`,
@@ -496,7 +501,7 @@ test('auth/connect should put the appState in the transaction store', async () =
   });
   const cookieName = '__a0_tx';
   const cookieValueRaw = fastify.parseCookie(res.headers['set-cookie']?.toString() as string)[cookieName] as string;
-  const cookieValue = await decrypt(cookieValueRaw, '<secret>', cookieName) as { appState: { returnTo: string } };
+  const cookieValue = (await decrypt(cookieValueRaw, '<secret>', cookieName)) as { appState: { returnTo: string } };
 
   expect(cookieValue?.appState?.returnTo).toBe('http://localhost:3000/custom-return');
 });
@@ -612,7 +617,12 @@ test('auth/connect/callback redirects to returnTo in state', async () => {
   });
 
   const cookieName = '__a0_tx';
-  const cookieValue = await encrypt({ appState: { returnTo: 'http://localhost:3000/custom-return' } }, '<secret>', cookieName, Date.now() + 1000);
+  const cookieValue = await encrypt(
+    { appState: { returnTo: 'http://localhost:3000/custom-return' } },
+    '<secret>',
+    cookieName,
+    Date.now() + 1000
+  );
   const res = await fastify.inject({
     method: 'GET',
     url: `/auth/connect/callback?code=123`,
@@ -830,7 +840,7 @@ test('auth/unconnect should put the appState in the transaction store', async ()
   });
   const cookieName = '__a0_tx';
   const cookieValueRaw = fastify.parseCookie(res.headers['set-cookie']?.toString() as string)[cookieName] as string;
-  const cookieValue = await decrypt(cookieValueRaw, '<secret>', cookieName) as { appState: { returnTo: string } };
+  const cookieValue = (await decrypt(cookieValueRaw, '<secret>', cookieName)) as { appState: { returnTo: string } };
 
   expect(cookieValue?.appState?.returnTo).toBe('http://localhost:3000/custom-return');
 });
@@ -949,7 +959,12 @@ test('auth/unconnect/callback redirects to returnTo in state', async () => {
   });
 
   const cookieName = '__a0_tx';
-  const cookieValue = await encrypt({ appState: { returnTo: 'http://localhost:3000/custom-return' } }, '<secret>', cookieName, Date.now() + 1000);
+  const cookieValue = await encrypt(
+    { appState: { returnTo: 'http://localhost:3000/custom-return' } },
+    '<secret>',
+    cookieName,
+    Date.now() + 1000
+  );
   const res = await fastify.inject({
     method: 'GET',
     url: `/auth/unconnect/callback?code=123`,

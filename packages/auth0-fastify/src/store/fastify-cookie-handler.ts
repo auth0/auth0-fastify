@@ -3,12 +3,7 @@ import { StoreOptions } from '../types.js';
 import { MissingStoreOptionsError } from '../errors/index.js';
 
 export class FastifyCookieHandler implements CookieHandler<StoreOptions> {
-  setCookie(
-    name: string,
-    value: string,
-    options?: CookieSerializeOptions,
-    storeOptions?: StoreOptions,
-  ): void {
+  setCookie(name: string, value: string, options?: CookieSerializeOptions, storeOptions?: StoreOptions): void {
     if (!storeOptions) {
       throw new MissingStoreOptionsError();
     }
