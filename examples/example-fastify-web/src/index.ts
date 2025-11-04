@@ -47,7 +47,7 @@ fastify.register(fastifyAuth0, {
 
 
 fastify.get('/', async (request, reply) => {
-  const user = await fastify.auth0Client!.getUser({ request, reply });
+  const user = await fastify.auth0Client!.getUser();
 
   return reply.viewAsync('index.ejs', { isLoggedIn: !!user, user: user });
 });
@@ -56,7 +56,7 @@ async function hasSessionPreHandler(
   request: FastifyRequest<RouteGenericInterface, Http2SecureServer, Http2ServerRequest>,
   reply: FastifyReply<RouteGenericInterface, Http2SecureServer, Http2ServerRequest, Http2ServerResponse<Http2ServerRequest>>
 ) {
-  const session = await fastify.auth0Client!.getSession({ request, reply });
+  const session = await fastify.auth0Client!.getSession();
 
   if (!session) {
     reply.redirect(`/auth/login?returnTo=${request.url}`);
@@ -66,7 +66,7 @@ async function hasSessionPreHandler(
 fastify.get(
   '/public',
   async (request, reply) => {
-    const user = await fastify.auth0Client!.getUser({ request, reply });
+    const user = await fastify.auth0Client!.getUser();
 
     return reply.viewAsync('public.ejs', {
       isLoggedIn: !!user,
@@ -81,7 +81,7 @@ fastify.get(
     preHandler: hasSessionPreHandler,
   },
   async (request, reply) => {
-    const user = await fastify.auth0Client!.getUser({ request, reply });
+    const user = await fastify.auth0Client!.getUser();
 
     return reply.viewAsync('private.ejs', {
       isLoggedIn: !!user,

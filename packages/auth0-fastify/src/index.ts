@@ -7,14 +7,92 @@ import type {
   RawServerDefault,
 } from 'fastify';
 import fp from 'fastify-plugin';
-import { CookieTransactionStore, ServerClient, StatelessStateStore, StatefulStateStore } from '@auth0/auth0-server-js';
+import {
+  CookieTransactionStore,
+  ServerClient,
+  StatelessStateStore,
+  StatefulStateStore,
+  StartInteractiveLoginOptions,
+  AccessTokenForConnectionOptions,
+  LoginBackchannelOptions,
+  LogoutOptions,
+  UserClaims,
+  SessionData,
+  LoginBackchannelResult,
+  ConnectionTokenSet,
+  TokenSet,
+  StartLinkUserOptions,
+  StartUnlinkUserOptions,
+} from '@auth0/auth0-server-js';
 import type { SessionConfiguration, SessionStore, StoreOptions } from './types.js';
 import { createRouteUrl, toSafeRedirect } from './utils.js';
 import { FastifyCookieHandler } from './store/fastify-cookie-handler.js';
 
 export * from './types.js';
 export { CookieTransactionStore } from '@auth0/auth0-server-js';
+import type { AuthorizationDetails } from '@auth0/auth0-auth-js';
+import { AsyncLocalStorage } from 'node:async_hooks';
 
+export interface Auth0Client<
+  RawServer extends RawServerBase = RawServerDefault,
+  RawRequest extends RawRequestDefaultExpression<RawServer> = RawRequestDefaultExpression<RawServer>,
+  RawReply extends RawReplyDefaultExpression<RawServer> = RawReplyDefaultExpression<RawServer>
+> {
+  /**
+   * Starts an interactive login flow by generating the authorization URL and storing the necessary transaction data.
+   * @param options Options for starting the interactive login flow.
+   * @deprecated @param storeOptions
+   * @returns
+   */
+  startInteractiveLogin: (
+    options?: StartInteractiveLoginOptions,
+    storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
+  ) => Promise<URL>;
+  completeInteractiveLogin: <TAppState = unknown>(
+    url: URL,
+    storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
+  ) => Promise<{
+    appState?: TAppState;
+    authorizationDetails?: AuthorizationDetails[];
+  }>;
+  getUser(storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>): Promise<UserClaims | undefined>;
+  getSession(storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>): Promise<SessionData | undefined>;
+  getAccessToken(storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>): Promise<TokenSet>;
+  getAccessTokenForConnection: (
+    options: AccessTokenForConnectionOptions,
+    storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
+  ) => Promise<ConnectionTokenSet>;
+  loginBackchannel: (
+    options: LoginBackchannelOptions,
+    storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
+  ) => Promise<LoginBackchannelResult>;
+  logout: (options: LogoutOptions, storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>) => Promise<URL>;
+  handleBackchannelLogout: (
+    logoutToken: string,
+    storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
+  ) => Promise<void>;
+
+  startLinkUser: (
+    options: StartLinkUserOptions,
+    storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
+  ) => Promise<URL>;
+  completeLinkUser: <TAppState = unknown>(
+    url: URL,
+    storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
+  ) => Promise<{
+    appState?: TAppState;
+  }>;
+  startUnlinkUser: (
+    options: StartUnlinkUserOptions,
+    storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
+  ) => Promise<URL>;
+  completeUnlinkUser: <TAppState = unknown>(
+    url: URL,
+    storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
+  ) => Promise<{
+    appState?: TAppState;
+  }>;
+}
 declare module 'fastify' {
   /**
    * FastifyInstance is a generic interface, whose generics represent the underlying server, request and reply types.
@@ -34,7 +112,8 @@ declare module 'fastify' {
      *
      * We pass-through the FastifyInstance generics to ensure compatibility with different server types.
      */
-    auth0Client: ServerClient<StoreOptions<RawServer, RawRequest, RawReply>> | undefined;
+    auth0Client: Auth0Client<RawServer, RawRequest, RawReply>| undefined;
+
   }
 }
 
@@ -80,6 +159,72 @@ export interface Auth0FastifyOptions<
     connectCallback?: string;
     unconnect?: string;
     unconnectCallback?: string;
+  };
+}
+
+function toFastifyInstance<
+  RawServer extends RawServerBase = RawServerDefault,
+  RawRequest extends RawRequestDefaultExpression<RawServer> = RawRequestDefaultExpression<RawServer>,
+  RawReply extends RawReplyDefaultExpression<RawServer> = RawReplyDefaultExpression<RawServer>
+>(
+  fastify: FastifyInstance<RawServer, RawRequest, RawReply>,
+  serverClient: ServerClient<StoreOptions<RawServer, RawRequest, RawReply>>
+) {
+  return {
+    startInteractiveLogin: (
+      options?: StartInteractiveLoginOptions,
+      storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
+    ) => {
+      return serverClient?.startInteractiveLogin(options, storeOptions ?? fastify.__auth0RequestContext.getStore());
+    },
+    completeInteractiveLogin: <TAppState>(url: URL, storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>) => {
+      return serverClient?.completeInteractiveLogin<TAppState>(
+        url,
+        storeOptions ?? fastify.__auth0RequestContext.getStore()
+      );
+    },
+    getUser: (storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>) => {
+      return serverClient?.getUser(storeOptions ?? fastify.__auth0RequestContext.getStore());
+    },
+    getSession: (storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>) => {
+      return serverClient?.getSession(storeOptions ?? fastify.__auth0RequestContext.getStore());
+    },
+    getAccessToken: (storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>) => {
+      return serverClient?.getAccessToken(storeOptions ?? fastify.__auth0RequestContext.getStore());
+    },
+    getAccessTokenForConnection: (
+      options: AccessTokenForConnectionOptions,
+      storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
+    ) => {
+      return serverClient?.getAccessTokenForConnection(options, storeOptions ?? fastify.__auth0RequestContext.getStore());
+    },
+    loginBackchannel: (
+      options: LoginBackchannelOptions,
+      storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
+    ) => {
+      return serverClient?.loginBackchannel(options, storeOptions ?? fastify.__auth0RequestContext.getStore());
+    },
+    logout: (options: LogoutOptions, storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>) => {
+      return serverClient?.logout(options, storeOptions ?? fastify.__auth0RequestContext.getStore());
+    },
+    handleBackchannelLogout: (logoutToken: string, storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>) => {
+      return serverClient?.handleBackchannelLogout(logoutToken, storeOptions ?? fastify.__auth0RequestContext.getStore());
+    },
+    startLinkUser: (options: StartLinkUserOptions, storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>) => {
+      return serverClient.startLinkUser(options, storeOptions ?? fastify.__auth0RequestContext.getStore());
+    },
+    completeLinkUser: <TAppState>(url: URL, storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>) => {
+      return serverClient.completeLinkUser<TAppState>(url, storeOptions ?? fastify.__auth0RequestContext.getStore());
+    },
+    startUnlinkUser: (
+      options: StartUnlinkUserOptions,
+      storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
+    ) => {
+      return serverClient.startUnlinkUser(options, storeOptions ?? fastify.__auth0RequestContext.getStore());
+    },
+    completeUnlinkUser: <TAppState>(url: URL, storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>) => {
+      return serverClient.completeUnlinkUser<TAppState>(url, storeOptions ?? fastify.__auth0RequestContext.getStore());
+    },
   };
 }
 
@@ -321,5 +466,25 @@ export default fp(async function auth0Fastify<
     }
   }
 
-  fastify.decorate('auth0Client', auth0Client);
+  
+  // We rely on AsyncLocalStorage to store `FastifyRequest` and `FastifyReply` objects per request.
+  // This ensures we simplify the public API, as consumers no longer need to pass these instances to the methods.
+  const auth0RequestContext = new AsyncLocalStorage<StoreOptions<RawServer, RawRequest, RawReply>>();
+
+  fastify.addHook('onRequest', (request, reply, done) => {
+    // Create the store object for this specific request
+    const store = {
+      request: request,
+      reply: reply,
+    };
+
+    // Run the rest of the request lifecycle (all subsequent hooks,
+    // handlers, and replies) inside the AsyncLocalStorage context.
+    auth0RequestContext.run(store, () => {
+      done();
+    });
+  });
+
+  fastify.decorate('auth0Client', toFastifyInstance(fastify, auth0Client));
+  fastify.decorate('__auth0RequestContext', auth0RequestContext);
 });
