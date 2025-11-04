@@ -14,6 +14,7 @@ import {
   LoginBackchannelResult,
   LogoutOptions,
   LogoutTokenClaims,
+  ServerClient,
   SessionData,
   StartInteractiveLoginOptions,
   StartLinkUserOptions,
@@ -28,10 +29,10 @@ import { AuthorizationDetails } from '@auth0/auth0-auth-js';
 /**
  * Options for accessing the Fastify request and reply objects.
  * These are used in store implementations to interact with cookies and sessions.
- * 
+ *
  * FastifyInstance is a generic interface itself, whose generics represent the underlying server, request and reply types.
  * By including these in the StoreOptions generics, we ensure that the `StoreOptions` aware of the underlying server type (e.g., HTTP/1.1, HTTP/2, etc.).
- * 
+ *
  * @remark The generics default to the values used by a standard Fastify instance.
  */
 export interface StoreOptions<
@@ -111,63 +112,136 @@ export interface SessionConfiguration {
   cookie?: SessionCookieOptions;
 }
 
+/**
+ * The Auth0 Client interface, providing methods for authentication and session management.
+ */
 export interface Auth0Client<
   RawServer extends RawServerBase = RawServerDefault,
   RawRequest extends RawRequestDefaultExpression<RawServer> = RawRequestDefaultExpression<RawServer>,
   RawReply extends RawReplyDefaultExpression<RawServer> = RawReplyDefaultExpression<RawServer>
 > {
+  startInteractiveLogin(options?: StartInteractiveLoginOptions): Promise<URL>;
   /**
-   * Starts an interactive login flow by generating the authorization URL and storing the necessary transaction data.
-   * @param options Options for starting the interactive login flow.
-   * @deprecated @param storeOptions
-   * @returns
+   * @deprecated Use the overload without `storeOptions` instead.
    */
-  startInteractiveLogin: (
+  startInteractiveLogin(
     options?: StartInteractiveLoginOptions,
     storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
-  ) => Promise<URL>;
-  completeInteractiveLogin: <TAppState = unknown>(
-    url: URL,
-    storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
-  ) => Promise<{
+  ): Promise<URL>;
+
+  completeInteractiveLogin<TAppState = unknown>(
+    url: URL
+  ): Promise<{
     appState?: TAppState;
     authorizationDetails?: AuthorizationDetails[];
   }>;
+  /**
+   * @deprecated Use the overload without `storeOptions` instead.
+   */
+  completeInteractiveLogin<TAppState = unknown>(
+    url: URL,
+    storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
+  ): Promise<{
+    appState?: TAppState;
+    authorizationDetails?: AuthorizationDetails[];
+  }>;
+
+  getUser(): Promise<UserClaims | undefined>;
+  /**
+   * @deprecated Use the overload without `storeOptions` instead.
+   */
   getUser(storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>): Promise<UserClaims | undefined>;
+
+  getSession(): Promise<SessionData | undefined>;
+  /**
+   * @deprecated Use the overload without `storeOptions` instead.
+   */
   getSession(storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>): Promise<SessionData | undefined>;
+
+  getAccessToken(): Promise<TokenSet>;
+  /**
+   * @deprecated Use the overload without `storeOptions` instead.
+   */
   getAccessToken(storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>): Promise<TokenSet>;
-  getAccessTokenForConnection: (
+
+  getAccessTokenForConnection(options: AccessTokenForConnectionOptions): Promise<ConnectionTokenSet>;
+  /**
+   * @deprecated Use the overload without `storeOptions` instead.
+   */
+  getAccessTokenForConnection(
     options: AccessTokenForConnectionOptions,
     storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
-  ) => Promise<ConnectionTokenSet>;
-  loginBackchannel: (
+  ): Promise<ConnectionTokenSet>;
+
+  loginBackchannel(options: LoginBackchannelOptions): Promise<LoginBackchannelResult>;
+  /**
+   * @deprecated Use the overload without `storeOptions` instead.
+   */
+  loginBackchannel(
     options: LoginBackchannelOptions,
     storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
-  ) => Promise<LoginBackchannelResult>;
-  logout: (options: LogoutOptions, storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>) => Promise<URL>;
-  handleBackchannelLogout: (
+  ): Promise<LoginBackchannelResult>;
+
+  logout(options: LogoutOptions): Promise<URL>;
+  /**
+   * @deprecated Use the overload without `storeOptions` instead.
+   */
+  logout(options: LogoutOptions, storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>): Promise<URL>;
+
+  handleBackchannelLogout(logoutToken: string): Promise<void>;
+  /**
+   * @deprecated Use the overload without `storeOptions` instead.
+   */
+  handleBackchannelLogout(
     logoutToken: string,
     storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
-  ) => Promise<void>;
+  ): Promise<void>;
 
-  startLinkUser: (
+  startLinkUser(options: StartLinkUserOptions): Promise<URL>;
+  /**
+   * @deprecated Use the overload without `storeOptions` instead.
+   */
+  startLinkUser(
     options: StartLinkUserOptions,
     storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
-  ) => Promise<URL>;
-  completeLinkUser: <TAppState = unknown>(
-    url: URL,
-    storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
-  ) => Promise<{
+  ): Promise<URL>;
+
+  completeLinkUser<TAppState = unknown>(
+    url: URL
+  ): Promise<{
     appState?: TAppState;
   }>;
-  startUnlinkUser: (
-    options: StartUnlinkUserOptions,
-    storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
-  ) => Promise<URL>;
-  completeUnlinkUser: <TAppState = unknown>(
+  /**
+   * @deprecated Use the overload without `storeOptions` instead.
+   */
+  completeLinkUser<TAppState = unknown>(
     url: URL,
     storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
-  ) => Promise<{
+  ): Promise<{
+    appState?: TAppState;
+  }>;
+
+  startUnlinkUser(options: StartUnlinkUserOptions): Promise<URL>;
+  /**
+   * @deprecated Use the overload without `storeOptions` instead.
+   */
+  startUnlinkUser(
+    options: StartUnlinkUserOptions,
+    storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
+  ): Promise<URL>;
+
+  completeUnlinkUser<TAppState = unknown>(
+    url: URL
+  ): Promise<{
+    appState?: TAppState;
+  }>;
+  /**
+   * @deprecated Use the overload without `storeOptions` instead.
+   */
+  completeUnlinkUser<TAppState = unknown>(
+    url: URL,
+    storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
+  ): Promise<{
     appState?: TAppState;
   }>;
 }
