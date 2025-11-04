@@ -16,11 +16,24 @@ export * from './types.js';
 export { CookieTransactionStore } from '@auth0/auth0-server-js';
 
 declare module 'fastify' {
+  /**
+   * FastifyInstance is a generic interface, whose generics represent the underlying server, request and reply types.
+   * By extending the interface with the same generics, we ensure that the `auth0Client` property is aware
+   * of the underlying server type (e.g., HTTP/1.1, HTTP/2, etc.).
+   *
+   * @remark The generics default to the values used by a standard Fastify instance.
+   */
   interface FastifyInstance<
     RawServer extends RawServerBase = RawServerDefault,
     RawRequest extends RawRequestDefaultExpression<RawServer> = RawRequestDefaultExpression<RawServer>,
     RawReply extends RawReplyDefaultExpression<RawServer> = RawReplyDefaultExpression<RawServer>
   > {
+    /**
+     * The Auth0 Server Client instance attached to the Fastify instance.
+     * This client is used to interact with Auth0 for authentication and session management.
+     *
+     * We pass-through the FastifyInstance generics to ensure compatibility with different server types.
+     */
     auth0Client: ServerClient<StoreOptions<RawServer, RawRequest, RawReply>> | undefined;
   }
 }

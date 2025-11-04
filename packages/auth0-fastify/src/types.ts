@@ -9,6 +9,15 @@ import type {
 } from 'fastify';
 import { LogoutTokenClaims, StateData } from '@auth0/auth0-server-js';
 
+/**
+ * Options for accessing the Fastify request and reply objects.
+ * These are used in store implementations to interact with cookies and sessions.
+ * 
+ * FastifyInstance is a generic interface itself, whose generics represent the underlying server, request and reply types.
+ * By including these in the StoreOptions generics, we ensure that the `StoreOptions` aware of the underlying server type (e.g., HTTP/1.1, HTTP/2, etc.).
+ * 
+ * @remark The generics default to the values used by a standard Fastify instance.
+ */
 export interface StoreOptions<
   RawServer extends RawServerBase = RawServerDefault,
   RawRequest extends RawRequestDefaultExpression<RawServer> = RawRequestDefaultExpression<RawServer>,
