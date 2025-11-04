@@ -24,7 +24,7 @@ export const generateToken = async (
 ) => {
   const privateKey = await jose.importJWK(jwk, alg);
   let jwtBuilder = new jose.SignJWT({ 'urn:example:claim': true, ...claims }).setProtectedHeader({ alg });
-  
+
   if (issuedAt !== false) {
     jwtBuilder = jwtBuilder.setIssuedAt(issuedAt);
   }
@@ -32,7 +32,6 @@ export const generateToken = async (
   if (expiresAt !== false) {
     jwtBuilder = jwtBuilder.setExpirationTime(expiresAt ?? '2h');
   }
-  
 
   if (issuer !== false) {
     jwtBuilder = jwtBuilder.setIssuer(issuer ?? `https://${domain}/`);

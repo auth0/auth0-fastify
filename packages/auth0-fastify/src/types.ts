@@ -1,5 +1,5 @@
-import type { FastifyReply, FastifyRequest } from "fastify";
-import { LogoutTokenClaims, StateData } from "@auth0/auth0-server-js";
+import type { FastifyReply, FastifyRequest } from 'fastify';
+import { LogoutTokenClaims, StateData } from '@auth0/auth0-server-js';
 
 export interface StoreOptions {
   request: FastifyRequest;
@@ -19,19 +19,19 @@ export interface SessionCookieOptions {
    *
    * Default: `__a0_session`.
    */
-  name?: string
+  name?: string;
   /**
    * The sameSite attribute of the session cookie.
    *
    * Default: `lax`.
    */
-  sameSite?: "strict" | "lax" | "none"
+  sameSite?: 'strict' | 'lax' | 'none';
   /**
    * The secure attribute of the session cookie.
    *
    * Default: depends on the protocol of the application's base URL. If the protocol is `https`, then `true`, otherwise `false`.
    */
-  secure?: boolean
+  secure?: boolean;
 }
 
 export interface SessionConfiguration {
@@ -43,7 +43,7 @@ export interface SessionConfiguration {
    *
    * Default: `true`.
    */
-  rolling?: boolean
+  rolling?: boolean;
   /**
    * The absolute duration after which the session will expire. The value must be specified in seconds..
    *
@@ -51,7 +51,7 @@ export interface SessionConfiguration {
    *
    * Default: 3 days.
    */
-  absoluteDuration?: number
+  absoluteDuration?: number;
   /**
    * The duration of inactivity after which the session will expire. The value must be specified in seconds.
    *
@@ -59,10 +59,10 @@ export interface SessionConfiguration {
    *
    * Default: 1 day.
    */
-  inactivityDuration?: number
+  inactivityDuration?: number;
 
   /**
    * The options for the session cookie.
    */
-  cookie?: SessionCookieOptions
+  cookie?: SessionCookieOptions;
 }

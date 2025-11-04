@@ -41,7 +41,6 @@ export async function decrypt<T>(value: string, secret: string, salt: string) {
   const res = await jwtDecrypt<T>(
     value,
     async (protectedHeader) => {
-
       // This error shouldn't happen, as we always set a kid.
       // However, leaving this here as a safety net.
       if (!protectedHeader.kid) {
