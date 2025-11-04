@@ -8,12 +8,13 @@ import type {
 } from 'fastify';
 import fp from 'fastify-plugin';
 import { CookieTransactionStore, ServerClient, StatelessStateStore, StatefulStateStore } from '@auth0/auth0-server-js';
-import type { SessionConfiguration, SessionStore, StoreOptions } from './types.js';
-import { createRouteUrl, toSafeRedirect } from './utils.js';
+import type { Auth0Client, SessionConfiguration, SessionStore, StoreOptions } from './types.js';
+import { createRouteUrl, toFastifyInstance, toSafeRedirect } from './utils.js';
 import { FastifyCookieHandler } from './store/fastify-cookie-handler.js';
 
 export * from './types.js';
 export { CookieTransactionStore } from '@auth0/auth0-server-js';
+import { AsyncLocalStorage } from 'node:async_hooks';
 
 declare module 'fastify' {
   /**
@@ -34,7 +35,7 @@ declare module 'fastify' {
      *
      * We pass-through the FastifyInstance generics to ensure compatibility with different server types.
      */
-    auth0Client: ServerClient<StoreOptions<RawServer, RawRequest, RawReply>> | undefined;
+    auth0Client: Auth0Client<RawServer, RawRequest, RawReply>| undefined;
   }
 }
 
@@ -321,5 +322,23 @@ export default fp(async function auth0Fastify<
     }
   }
 
-  fastify.decorate('auth0Client', auth0Client);
+  // We rely on AsyncLocalStorage to store `FastifyRequest` and `FastifyReply` objects per request.
+  // This ensures we simplify the public API, as consumers no longer need to pass these instances to the methods.
+  const auth0RequestContext = new AsyncLocalStorage<StoreOptions<RawServer, RawRequest, RawReply>>();
+
+  fastify.addHook('onRequest', (request, reply, done) => {
+    // Create the store object for this specific request
+    const store = {
+      request: request,
+      reply: reply,
+    };
+
+    // Run the rest of the request lifecycle (all subsequent hooks,
+    // handlers, and replies) inside the AsyncLocalStorage context.
+    auth0RequestContext.run(store, () => {
+      done();
+    });
+  });
+
+  fastify.decorate('auth0Client', toFastifyInstance(auth0Client, auth0RequestContext));
 });
