@@ -1,16 +1,44 @@
-import type { FastifyReply, FastifyRequest } from 'fastify';
+import type {
+  FastifyReply,
+  FastifyRequest,
+  RawServerBase,
+  RawRequestDefaultExpression,
+  RawReplyDefaultExpression,
+  RawServerDefault,
+  RouteGenericInterface,
+} from 'fastify';
 import { LogoutTokenClaims, StateData } from '@auth0/auth0-server-js';
 
-export interface StoreOptions {
-  request: FastifyRequest;
-  reply: FastifyReply;
+/**
+ * Options for accessing the Fastify request and reply objects.
+ * These are used in store implementations to interact with cookies and sessions.
+ * 
+ * FastifyInstance is a generic interface itself, whose generics represent the underlying server, request and reply types.
+ * By including these in the StoreOptions generics, we ensure that the `StoreOptions` aware of the underlying server type (e.g., HTTP/1.1, HTTP/2, etc.).
+ * 
+ * @remark The generics default to the values used by a standard Fastify instance.
+ */
+export interface StoreOptions<
+  RawServer extends RawServerBase = RawServerDefault,
+  RawRequest extends RawRequestDefaultExpression<RawServer> = RawRequestDefaultExpression<RawServer>,
+  RawReply extends RawReplyDefaultExpression<RawServer> = RawReplyDefaultExpression<RawServer>
+> {
+  request: FastifyRequest<RouteGenericInterface, RawServer, RawRequest>;
+  reply: FastifyReply<RouteGenericInterface, RawServer, RawRequest, RawReply>;
 }
 
-export interface SessionStore {
+export interface SessionStore<
+  RawServer extends RawServerBase = RawServerDefault,
+  RawRequest extends RawRequestDefaultExpression<RawServer> = RawRequestDefaultExpression<RawServer>,
+  RawReply extends RawReplyDefaultExpression<RawServer> = RawReplyDefaultExpression<RawServer>
+> {
   delete(identifier: string): Promise<void>;
   set(identifier: string, stateData: StateData): Promise<void>;
   get(identifier: string): Promise<StateData | undefined>;
-  deleteByLogoutToken(claims: LogoutTokenClaims, options?: StoreOptions | undefined): Promise<void>;
+  deleteByLogoutToken(
+    claims: LogoutTokenClaims,
+    options?: StoreOptions<RawServer, RawRequest, RawReply> | undefined
+  ): Promise<void>;
 }
 
 export interface SessionCookieOptions {
