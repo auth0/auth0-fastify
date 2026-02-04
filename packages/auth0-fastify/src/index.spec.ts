@@ -117,6 +117,113 @@ test('auth/login redirects to authorize when not using a root appBaseUrl', async
   expect(url.searchParams.size).toBe(6);
 });
 
+test('auth/login infers appBaseUrl from request when using a domain resolver', async () => {
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    domain: async () => domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    sessionSecret: '<secret>',
+  });
+
+  const res = await fastify.inject({
+    method: 'GET',
+    url: '/auth/login',
+    headers: {
+      host: 'app.example.com',
+      'x-forwarded-proto': 'https',
+    },
+  });
+  const url = new URL(res.headers['location']?.toString() ?? '');
+
+  expect(res.statusCode).toBe(302);
+  expect(url.host).toBe(domain);
+  expect(url.searchParams.get('redirect_uri')).toBe('https://app.example.com/auth/callback');
+});
+
+test('auth/login prefers forwarded host/proto when inferring appBaseUrl', async () => {
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    domain: async () => domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    sessionSecret: '<secret>',
+  });
+
+  const res = await fastify.inject({
+    method: 'GET',
+    url: '/auth/login',
+    headers: {
+      host: 'internal.example.local',
+      'x-forwarded-host': 'public.example.com',
+      'x-forwarded-proto': 'https',
+    },
+  });
+  const url = new URL(res.headers['location']?.toString() ?? '');
+
+  expect(res.statusCode).toBe(302);
+  expect(url.searchParams.get('redirect_uri')).toBe('https://public.example.com/auth/callback');
+});
+
+test('auth/login fails when appBaseUrl cannot be inferred', async () => {
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    domain: async () => domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    sessionSecret: '<secret>',
+  });
+
+  const res = await fastify.inject({
+    method: 'GET',
+    url: '/auth/login',
+    headers: {
+      host: '',
+      'x-forwarded-proto': '',
+    },
+  });
+
+  expect(res.statusCode).toBe(500);
+});
+
+test('auth/logout infers appBaseUrl from request when using a domain resolver', async () => {
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    domain: async () => domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    sessionSecret: '<secret>',
+  });
+
+  const res = await fastify.inject({
+    method: 'GET',
+    url: '/auth/logout',
+    headers: {
+      host: 'app.example.com',
+      'x-forwarded-proto': 'https',
+    },
+  });
+  const url = new URL(res.headers['location']?.toString() ?? '');
+
+  expect(res.statusCode).toBe(302);
+  const returnTo =
+    url.searchParams.get('returnTo') ?? url.searchParams.get('post_logout_redirect_uri');
+  expect(returnTo).toBe('https://app.example.com');
+});
+
+test('requires appBaseUrl when using a static domain', async () => {
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    // @ts-expect-error appBaseUrl required for static domain
+    domain: domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    sessionSecret: '<secret>',
+  });
+
+  await expect(fastify.ready()).rejects.toThrowError('appBaseUrl is required when domain is a string.');
+});
+
 test('auth/login should put the appState in the transaction store', async () => {
   const fastify = Fastify();
   fastify.register(plugin, {

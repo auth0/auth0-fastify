@@ -48,6 +48,23 @@ openssl rand -hex 64
 
 The `APP_BASE_URL` is the URL that your application is running on. When developing locally, this is most commonly `http://localhost:3000`.
 
+### Discovery Cache
+
+You can configure caching for OIDC discovery metadata and JWKS fetchers by passing `discoveryCache`.
+This cache is maintained by `@auth0/auth0-server-js` and is keyed by domain, so it is especially useful in MCD setups.
+TTL is in seconds and controls how long metadata/JWKS are kept before re-fetching. `maxEntries` limits the LRU size.
+Defaults: `ttl = 600`, `maxEntries = 100`.
+
+```ts
+import auth0 from '@auth0/auth0-fastify';
+
+fastify.register(auth0, {
+  // other config options...
+  discoveryCache: { ttl: 600, maxEntries: 100 },
+});
+```
+
+
 > [!IMPORTANT]  
 > You will need to register the following URLs in your Auth0 Application via the [Auth0 Dashboard](https://manage.auth0.com):
 >

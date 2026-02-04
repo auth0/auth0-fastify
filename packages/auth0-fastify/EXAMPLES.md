@@ -2,6 +2,8 @@
 
 - [Configuration](#configuration)
   - [Basic configuration](#basic-configuration)
+  - [Multiple Custom Domains (MCD)](#multiple-custom-domains-mcd)
+  - [Discovery Cache](#discovery-cache)
   - [Configuring the mounted routes](#configuring-the-mounted-routes)
 - [The `ServerClient` instance](#the-serverclient-instance)
 - [Protecting Routes](#protecting-routes)
@@ -38,6 +40,43 @@ openssl rand -hex 64
 
 The `APP_BASE_URL` is the URL that your application is running on. When developing locally, this is most commonly `http://localhost:3000`.
 
+### Multiple Custom Domains (MCD)
+
+For MCD, configure a `domain` resolver so the SDK can resolve the issuer per request. `appBaseUrl` can be static (recommended for subpath apps), or omitted to infer the base URL from the incoming request:
+
+```ts
+import { DomainResolver, DomainResolverContext } from '@auth0/auth0-fastify';
+
+const domainResolver: DomainResolver = async ({ storeOptions }: DomainResolverContext) => {
+  const host = storeOptions?.request?.headers.host;
+  if (!host) return null;
+  // Customer-provided mapping logic for resolving the correct Auth0 domain.
+  return await lookupAuth0Domain(host);
+};
+
+fastify.register(fastifyAuth0, {
+  domain: domainResolver,
+  // Optional for MCD. If omitted, the base URL is inferred from the request host/proto.
+  appBaseUrl: '<APP_BASE_URL>',
+  clientId: '<AUTH0_CLIENT_ID>',
+  clientSecret: '<AUTH0_CLIENT_SECRET>',
+  sessionSecret: '<SESSION_SECRET>',
+});
+```
+
+If your resolver or inferred base URL depends on forwarded headers, ensure your proxy forwards them (e.g. `x-forwarded-host` and `x-forwarded-proto`).
+When using a static `domain` (non-MCD), `appBaseUrl` is required.
+If you omit `appBaseUrl`, make sure every inferred origin is registered in Auth0 as an Allowed Callback URL and Allowed Logout URL.
+
+> [!IMPORTANT]
+>
+> When `appBaseUrl` is omitted in MCD, the SDK infers it from request headers.
+> While convenient, this assumes that proxy headers are trusted.
+>
+> If your deployment does not strictly control the `Host` or `x-forwarded-*`
+> headers, an attacker could influence redirect or logout URLs. In such cases,
+> provide a static `appBaseUrl` or validate headers at the edge.
+
 > [!IMPORTANT]  
 > You will need to register the following URLs in your Auth0 Application via the [Auth0 Dashboard](https://manage.auth0.com):
 >
@@ -45,6 +84,19 @@ The `APP_BASE_URL` is the URL that your application is running on. When developi
 > - Add `http://localhost:3000` to the list of **Allowed Logout URLs**
 
 
+
+### Discovery Cache
+
+Configure caching for OIDC discovery metadata and JWKS fetchers by passing `discoveryCache`.
+The cache is maintained by `@auth0/auth0-server-js` and is keyed by domain (helpful for MCD).
+TTL is in seconds; `maxEntries` limits the LRU size. Defaults: `ttl = 600`, `maxEntries = 100`.
+
+```ts
+fastify.register(fastifyAuth0, {
+  // other options...
+  discoveryCache: { ttl: 600, maxEntries: 100 },
+});
+```
 
 ### Configuring the mounted routes
 

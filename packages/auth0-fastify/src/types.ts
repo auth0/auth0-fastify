@@ -6,6 +6,21 @@ export interface StoreOptions {
   reply: FastifyReply;
 }
 
+export interface DiscoveryCacheOptions {
+  /**
+   * Cache TTL in seconds.
+   *
+   * Default: 600.
+   */
+  ttl?: number;
+  /**
+   * Max number of entries stored in the cache.
+   *
+   * Default: 100.
+   */
+  maxEntries?: number;
+}
+
 export interface SessionStore {
   delete(identifier: string): Promise<void>;
   set(identifier: string, stateData: StateData): Promise<void>;
