@@ -2,6 +2,8 @@
 
 - [Configuration](#configuration)
   - [Basic configuration](#basic-configuration)
+  - [Multiple Custom Domains (MCD)](#multiple-custom-domains-mcd)
+  - [Discovery cache configuration](#discovery-cache-configuration)
   - [Configuring a `customFetch` implementation](#configuring-a-customfetch-implementation)
 - [Protecting API Routes](#protecting-api-routes)
 
@@ -26,6 +28,88 @@ fastify.register(fastifyAuth0, {
 
 The `AUTH0_DOMAIN` can be obtained from the [Auth0 Dashboard](https://manage.auth0.com) once you've created an application. 
 The `AUTH0_AUDIENCE` is the identifier of the API that is being called. You can find this in the API section of the Auth0 dashboard.
+
+
+### Multiple Custom Domains (MCD)
+
+When your API is served behind multiple custom domains, configure `domains`. Use the exact host values shown in the Auth0 Dashboard (e.g., `your-tenant.auth0.com` or `custom-domain.example.com`), without `https://` or any path; https and trailing slashes are normalized by `@auth0/auth0-api-js`. The plugin passes request headers and URL to `@auth0/auth0-api-js` for domain resolution.
+
+> [!WARNING]  
+> `DomainsResolver` often relies on request headers such as `Host` or `X-Forwarded-Host`. These headers can be spoofed by clients unless your Fastify instance is behind a trusted proxy and you have a clear trust boundary. Always validate/allowlist hosts and only honor forwarded headers from trusted infrastructure.
+
+#### Static allowlist
+```ts
+import fastifyAuth0, { type Auth0FastifyApiOptions } from '@auth0/auth0-fastify-api';
+
+const fastify = Fastify({
+  logger: true,
+});
+
+const options: Auth0FastifyApiOptions = {
+  audience: '<AUTH0_AUDIENCE>',
+  domains: [
+    'your-tenant.auth0.com',
+    'custom-domain.example.com',
+  ],
+};
+
+fastify.register(fastifyAuth0, options);
+```
+
+#### Dynamic resolver
+```ts
+import fastifyAuth0, {
+  type DomainsResolver,
+  type DomainsResolverContext,
+} from '@auth0/auth0-fastify-api';
+
+const fastify = Fastify({
+  logger: true,
+});
+
+const domainsResolver: DomainsResolver = ({ url, headers }: DomainsResolverContext) => {
+  const host =
+    headers?.['x-forwarded-host'] ??
+    headers?.['host'] ??
+    (url ? new URL(url).host : undefined);
+
+  if (host === 'api.my-app.com') {
+    return ['custom-domain.example.com'];
+  }
+
+  return ['your-tenant.auth0.com'];
+};
+
+fastify.register(fastifyAuth0, {
+  audience: '<AUTH0_AUDIENCE>',
+  domain: '<AUTH0_DOMAIN>', // optional for verification-only, required for client flows
+  domains: domainsResolver,
+  algorithms: ['RS256'],
+});
+```
+
+### Discovery cache configuration
+
+You can control discovery/JWKS caching behavior by forwarding `discoveryCache` to the underlying ApiClient (TTL is in seconds). This cache is not MCD-specific; it applies to all verification flows.
+
+- `ttl`: how long discovery metadata and JWKS fetchers are kept (seconds)
+- `maxEntries`: max cached domains/JWKS entries before LRU eviction
+
+Lower values increase network calls; higher values reduce network calls but increase memory use.
+
+```ts
+import fastifyAuth0 from '@auth0/auth0-fastify-api';
+
+const fastify = Fastify({
+  logger: true,
+});
+
+fastify.register(fastifyAuth0, {
+  domain: '<AUTH0_DOMAIN>',
+  audience: '<AUTH0_AUDIENCE>',
+  discoveryCache: { ttl: 600, maxEntries: 100 },
+});
+```
 
 ### Configuring a `customFetch` implementation
 
