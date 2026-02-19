@@ -30,29 +30,29 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js with npm caching
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js with pnpm caching
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-          cache: "npm"
-
-      - name: Update npm
-        run: npm install -g npm@latest
+          cache: "pnpm"
 
       - name: Install dependencies
-        run: npm install
+        run: pnpm install
 
       - name: Build auth0-fastify
-        run: npm run build -w @auth0/auth0-fastify
+        run: pnpm run build --filter @auth0/auth0-fastify
 
       - name: Build auth0-fastify-api
-        run: npm run build -w @auth0/auth0-fastify-api
+        run: pnpm run build --filter @auth0/auth0-fastify-api
 
       - name: Test auth0-fastify
-        run: npm run test:ci -w @auth0/auth0-fastify
+        run: pnpm run test:ci --filter @auth0/auth0-fastify
 
       - name: Test auth0-fastify-api
-        run: npm run test:ci -w @auth0/auth0-fastify-api
+        run: pnpm run test:ci --filter @auth0/auth0-fastify-api
 
   lint:
     name: Lint
@@ -62,19 +62,20 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js with npm caching
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js with pnpm caching
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: "pnpm"
 
-      - name: Update npm
-        run: npm install -g npm@latest
-    
       - name: Install dependencies
-        run: npm install
-      
+        run: pnpm install
+
       - name: Lint @auth0/auth0-fastify
-        run: npm run lint -w @auth0/auth0-fastify
+        run: pnpm run lint --filter @auth0/auth0-fastify
 
       - name: Lint @auth0/auth0-fastify-api
-        run: npm run lint -w @auth0/auth0-fastify-api
+        run: pnpm run lint --filter @auth0/auth0-fastify-api

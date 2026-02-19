@@ -25,13 +25,13 @@ Before running the examples, you need to install the dependencies for the monore
 1. Install depedencies
 
 ```bash
-$ npm install
+$ pnpm install
 ```
 
 2. Build all packages
 
 ```bash
-$ npm run build
+$ pnpm run build
 ```
 
 3. Follow example instructions

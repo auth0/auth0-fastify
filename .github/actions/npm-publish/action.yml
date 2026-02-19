@@ -19,24 +19,24 @@ runs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v4
+
     - name: Setup Node
       uses: actions/setup-node@v4
       with:
         node-version: ${{ inputs.node-version }}
-        cache: 'npm'
+        cache: 'pnpm'
         registry-url: 'https://registry.npmjs.org'
-
-    - name: Update npm
-      run: npm install -g npm@latest
 
     - name: Install dependencies
       shell: bash
-      run: npm ci --include=dev
+      run: pnpm install --frozen-lockfile
 
     - name: Build package
       if: inputs.require-build == 'true'
       shell: bash
-      run: npm run build
+      run: pnpm run build
 
     - name: Publish release to NPM
       working-directory: packages/${{ inputs.package }}
@@ -49,6 +49,6 @@ runs:
         else
           TAG="latest"
         fi
-        npm publish --provenance --tag $TAG
+        pnpm publish --no-git-checks --provenance --tag $TAG
       env:
         VERSION: ${{ inputs.version }}

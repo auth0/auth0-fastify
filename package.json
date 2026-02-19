@@ -15,7 +15,10 @@
   "author": "",
   "license": "ISC",
   "description": "",
-  "packageManager": "npm@10.1.0",
+  "packageManager": "pnpm@10.0.0",
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild", "msw"]
+  },
   "devDependencies": {
     "turbo": "^2.4.4",
     "typedoc": "^0.27.9"
