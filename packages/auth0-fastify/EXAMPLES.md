@@ -87,16 +87,23 @@ If you omit `appBaseUrl`, make sure every inferred origin is registered in Auth0
 
 ### Discovery Cache
 
-Configure caching for OIDC discovery metadata and JWKS fetchers by passing `discoveryCache`.
-The cache is maintained by `@auth0/auth0-server-js` and is keyed by domain (helpful for MCD).
-TTL is in seconds; `maxEntries` limits the LRU size. Defaults: `ttl = 600`, `maxEntries = 100`.
+By default, the SDK caches discovery metadata and JWKS in memory using an LRU cache
+with a TTL of `600` seconds and a maximum of `100` entries. To override these defaults:
 
 ```ts
 fastify.register(fastifyAuth0, {
   // other options...
-  discoveryCache: { ttl: 600, maxEntries: 100 },
+  discoveryCache: { ttl: 800, maxEntries: 200 },
 });
 ```
+
+When to configure discoveryCache:
+
+- [Multiple Custom Domains](https://auth0.com/docs/customize/custom-domains/multiple-custom-domains).
+- High-throughput services where you want fewer metadata fetches.
+- Memory-constrained environments where you want a smaller cache.
+
+To effectively disable discovery cache reuse, set `discoveryCache.ttl` to `0`.
 
 ### Configuring the mounted routes
 

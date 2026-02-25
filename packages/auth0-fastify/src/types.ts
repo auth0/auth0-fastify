@@ -1,24 +1,10 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { LogoutTokenClaims, StateData } from '@auth0/auth0-server-js';
+import type { LogoutTokenClaims, StateData } from '@auth0/auth0-server-js';
+export type { DiscoveryCacheOptions } from '@auth0/auth0-server-js';
 
 export interface StoreOptions {
   request: FastifyRequest;
   reply: FastifyReply;
-}
-
-export interface DiscoveryCacheOptions {
-  /**
-   * Cache TTL in seconds.
-   *
-   * Default: 600.
-   */
-  ttl?: number;
-  /**
-   * Max number of entries stored in the cache.
-   *
-   * Default: 100.
-   */
-  maxEntries?: number;
 }
 
 export interface SessionStore {
