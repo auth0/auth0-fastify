@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { LogoutTokenClaims, StateData } from '@auth0/auth0-server-js';
+import type { LogoutTokenClaims, StateData } from '@auth0/auth0-server-js';
+export type { DiscoveryCacheOptions } from '@auth0/auth0-server-js';
 
 export interface StoreOptions {
   request: FastifyRequest;
