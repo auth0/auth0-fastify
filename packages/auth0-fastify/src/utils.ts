@@ -1,3 +1,16 @@
+import {
+  AccessTokenForConnectionOptions,
+  LoginBackchannelOptions,
+  LogoutOptions,
+  ServerClient,
+  StartInteractiveLoginOptions,
+  StartLinkUserOptions,
+  StartUnlinkUserOptions,
+} from '@auth0/auth0-server-js';
+import { RawReplyDefaultExpression, RawRequestDefaultExpression, RawServerBase, RawServerDefault } from 'fastify';
+import { StoreOptions } from './types.js';
+import { getRequestContext } from './store/request-context.js';
+
 /**
  * Ensures the value has a trailing slash.
  * If it does not, it will append one.
@@ -48,4 +61,96 @@ export function toSafeRedirect(dangerousRedirect: string, safeBaseUrl: string): 
   }
 
   return undefined;
+}
+
+/**
+ * Converts a ServerClient to a FastifyInstance-bound client.
+ *
+ * This allows using the client methods without explicitly passing StoreOptions,
+ * as they will be automatically retrieved from the FastifyInstance's AsyncLocalStorage context (`requestContext`).
+ * @param serverClient The server client.
+ * @returns The FastifyInstance-bound client.
+ */
+export function toFastifyInstance<
+  RawServer extends RawServerBase = RawServerDefault,
+  RawRequest extends RawRequestDefaultExpression<RawServer> = RawRequestDefaultExpression<RawServer>,
+  RawReply extends RawReplyDefaultExpression<RawServer> = RawReplyDefaultExpression<RawServer>,
+>(serverClient: ServerClient<StoreOptions<RawServer, RawRequest, RawReply>>) {
+  return {
+    startInteractiveLogin: (
+      options?: StartInteractiveLoginOptions,
+      storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
+    ) => {
+      return serverClient?.startInteractiveLogin(
+        options,
+        storeOptions ?? getRequestContext<RawServer, RawRequest, RawReply>()
+      );
+    },
+    completeInteractiveLogin: <TAppState>(url: URL, storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>) => {
+      return serverClient?.completeInteractiveLogin<TAppState>(
+        url,
+        storeOptions ?? getRequestContext<RawServer, RawRequest, RawReply>()
+      );
+    },
+    getUser: (storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>) => {
+      return serverClient?.getUser(storeOptions ?? getRequestContext<RawServer, RawRequest, RawReply>());
+    },
+    getSession: (storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>) => {
+      return serverClient?.getSession(storeOptions ?? getRequestContext<RawServer, RawRequest, RawReply>());
+    },
+    getAccessToken: (storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>) => {
+      return serverClient?.getAccessToken(storeOptions ?? getRequestContext<RawServer, RawRequest, RawReply>());
+    },
+    getAccessTokenForConnection: (
+      options: AccessTokenForConnectionOptions,
+      storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
+    ) => {
+      return serverClient?.getAccessTokenForConnection(
+        options,
+        storeOptions ?? getRequestContext<RawServer, RawRequest, RawReply>()
+      );
+    },
+    loginBackchannel: (
+      options: LoginBackchannelOptions,
+      storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
+    ) => {
+      return serverClient?.loginBackchannel(
+        options,
+        storeOptions ?? getRequestContext<RawServer, RawRequest, RawReply>()
+      );
+    },
+    logout: (options: LogoutOptions, storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>) => {
+      return serverClient?.logout(options, storeOptions ?? getRequestContext<RawServer, RawRequest, RawReply>());
+    },
+    handleBackchannelLogout: (logoutToken: string, storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>) => {
+      return serverClient?.handleBackchannelLogout(
+        logoutToken,
+        storeOptions ?? getRequestContext<RawServer, RawRequest, RawReply>()
+      );
+    },
+    startLinkUser: (options: StartLinkUserOptions, storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>) => {
+      return serverClient.startLinkUser(options, storeOptions ?? getRequestContext<RawServer, RawRequest, RawReply>());
+    },
+    completeLinkUser: <TAppState>(url: URL, storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>) => {
+      return serverClient.completeLinkUser<TAppState>(
+        url,
+        storeOptions ?? getRequestContext<RawServer, RawRequest, RawReply>()
+      );
+    },
+    startUnlinkUser: (
+      options: StartUnlinkUserOptions,
+      storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>
+    ) => {
+      return serverClient.startUnlinkUser(
+        options,
+        storeOptions ?? getRequestContext<RawServer, RawRequest, RawReply>()
+      );
+    },
+    completeUnlinkUser: <TAppState>(url: URL, storeOptions?: StoreOptions<RawServer, RawRequest, RawReply>) => {
+      return serverClient.completeUnlinkUser<TAppState>(
+        url,
+        storeOptions ?? getRequestContext<RawServer, RawRequest, RawReply>()
+      );
+    },
+  } as ServerClient<StoreOptions<RawServer, RawRequest, RawReply>>;
 }
