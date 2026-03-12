@@ -9,11 +9,12 @@ import type {
 import fp from 'fastify-plugin';
 import { CookieTransactionStore, ServerClient, StatelessStateStore, StatefulStateStore } from '@auth0/auth0-server-js';
 import type { SessionConfiguration, SessionStore, StoreOptions } from './types.js';
-import { createRouteUrl, toSafeRedirect } from './utils.js';
+import { createRouteUrl, toFastifyInstance, toSafeRedirect } from './utils.js';
 import { FastifyCookieHandler } from './store/fastify-cookie-handler.js';
 
 export * from './types.js';
 export { CookieTransactionStore } from '@auth0/auth0-server-js';
+import { runWithContext } from './store/request-context.js';
 
 declare module 'fastify' {
   /**
@@ -26,7 +27,7 @@ declare module 'fastify' {
   interface FastifyInstance<
     RawServer extends RawServerBase = RawServerDefault,
     RawRequest extends RawRequestDefaultExpression<RawServer> = RawRequestDefaultExpression<RawServer>,
-    RawReply extends RawReplyDefaultExpression<RawServer> = RawReplyDefaultExpression<RawServer>
+    RawReply extends RawReplyDefaultExpression<RawServer> = RawReplyDefaultExpression<RawServer>,
   > {
     /**
      * The Auth0 Server Client instance attached to the Fastify instance.
@@ -41,7 +42,7 @@ declare module 'fastify' {
 export interface Auth0FastifyOptions<
   RawServer extends RawServerBase = RawServerDefault,
   RawRequest extends RawRequestDefaultExpression<RawServer> = RawRequestDefaultExpression<RawServer>,
-  RawReply extends RawReplyDefaultExpression<RawServer> = RawReplyDefaultExpression<RawServer>
+  RawReply extends RawReplyDefaultExpression<RawServer> = RawReplyDefaultExpression<RawServer>,
 > {
   domain: string;
   clientId: string;
@@ -86,7 +87,7 @@ export interface Auth0FastifyOptions<
 export default fp(async function auth0Fastify<
   RawServer extends RawServerBase = RawServerDefault,
   RawRequest extends RawRequestDefaultExpression<RawServer> = RawRequestDefaultExpression<RawServer>,
-  RawReply extends RawReplyDefaultExpression<RawServer> = RawReplyDefaultExpression<RawServer>
+  RawReply extends RawReplyDefaultExpression<RawServer> = RawReplyDefaultExpression<RawServer>,
 >(
   fastify: FastifyInstance<RawServer, RawRequest, RawReply>,
   options: Auth0FastifyOptions<RawServer, RawRequest, RawReply>
@@ -321,5 +322,13 @@ export default fp(async function auth0Fastify<
     }
   }
 
-  fastify.decorate('auth0Client', auth0Client);
+  // We rely on AsyncLocalStorage to store `FastifyRequest` and `FastifyReply` objects per request.
+  // This ensures we simplify the public API, as consumers no longer need to pass these instances to the methods.
+  fastify.addHook('onRequest', (request, reply, done) => {
+    // Run the rest of the request lifecycle (all subsequent hooks,
+    // handlers, and replies) inside the AsyncLocalStorage context.
+    runWithContext({ request, reply }, () => done());
+  });
+
+  fastify.decorate('auth0Client', toFastifyInstance(auth0Client));
 });
