@@ -7,7 +7,7 @@ import { createRouteUrl, toSafeRedirect } from './utils.js';
 import { FastifyCookieHandler } from './store/fastify-cookie-handler.js';
 
 export * from './types.js';
-export type { DomainResolver, DomainResolverContext } from '@auth0/auth0-server-js';
+export type { DomainResolver } from '@auth0/auth0-server-js';
 export { CookieTransactionStore } from '@auth0/auth0-server-js';
 
 declare module 'fastify' {
