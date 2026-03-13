@@ -99,17 +99,14 @@ If you omit `appBaseUrl`, make sure every inferred origin is registered in Auth0
 
 ### Discovery Cache
 
-By default, the SDK caches discovery metadata and JWKS in memory using an LRU cache
-with a TTL of `600` seconds and a maximum of `100` entries. To override these defaults:
+By default, the SDK caches discovery metadata and JWKS in memory using an `LRU` cache
+with a `TTL` of `600` seconds and a maximum of `100` entries. To override these defaults:
 
 In `@auth0/auth0-fastify`, `discoveryCache` is forwarded to the underlying `@auth0/auth0-server-js` client.
 Cache reuse is scoped by resolved Auth0 domain (and mTLS mode), so each domain keeps its own discovery/JWKS entries.
 
-Most Fastify applications can keep the defaults.
-
-When to adjust `discoveryCache`:
-
-- Increase `maxEntries` if one Fastify process may handle more than `100` distinct Auth0 domains during the TTL window (common in larger MCD deployments).
+Most `Fastify` applications can keep the defaults, but you may want to adjust `discoveryCache` in the following cases:
+- Increase `maxEntries` if one `Fastify` process may handle more than `100` distinct Auth0 domains during the `TTL` window (common in larger MCD deployments).
 - Increase `ttl` if domains are reused frequently and you want fewer repeated discovery/JWKS fetches after expiry.
 - Decrease `ttl` if you want metadata/signing key changes to be picked up sooner.
 - Decrease `maxEntries` if memory is tighter than network round-trip cost.
