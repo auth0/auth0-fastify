@@ -42,21 +42,29 @@ The `APP_BASE_URL` is the URL that your application is running on. When developi
 
 ### Multiple Custom Domains (MCD)
 
-For MCD, configure a `domain` resolver so the SDK can resolve the issuer per request. `appBaseUrl` can be static (recommended for subpath apps), or omitted to infer the base URL from the incoming request:
+`@auth0/auth0-fastify` uses `@auth0/auth0-server-js` under the hood for MCD support.
+For MCD, configure a `domain` resolver so the SDK can resolve the issuer per request.
+The resolver receives the same per-request `StoreOptions` object (`{ request, reply }` in Fastify) that the SDK passes internally to `auth0-server-js`.
 
 ```ts
-import { DomainResolver, DomainResolverContext } from '@auth0/auth0-fastify';
+import fastifyAuth0, { DomainResolver } from '@auth0/auth0-fastify';
+import type { StoreOptions } from '@auth0/auth0-fastify';
 
-const domainResolver: DomainResolver = async ({ storeOptions }: DomainResolverContext) => {
+const domainResolver: DomainResolver<StoreOptions> = async (storeOptions) => {
   const host = storeOptions?.request?.headers.host;
-  if (!host) return null;
   // Customer-provided mapping logic for resolving the correct Auth0 domain.
-  return await lookupAuth0Domain(host);
+  const hostToAuth0Domain: Record<string, string> = {
+    'app-a.example.com': 'tenant-a.us.auth0.com',
+    'app-b.example.com': 'tenant-b.us.auth0.com',
+  };
+
+  // Resolver must return a non-empty domain string.
+  return host ? hostToAuth0Domain[host] ?? 'default-tenant.us.auth0.com' : 'default-tenant.us.auth0.com';
 };
 
 fastify.register(fastifyAuth0, {
   domain: domainResolver,
-  // Optional for MCD. If omitted, the base URL is inferred from the request host/proto.
+  // Optional in MCD. If omitted, base URL is inferred from request host/proto.
   appBaseUrl: '<APP_BASE_URL>',
   clientId: '<AUTH0_CLIENT_ID>',
   clientSecret: '<AUTH0_CLIENT_SECRET>',
@@ -66,6 +74,10 @@ fastify.register(fastifyAuth0, {
 
 If your resolver or inferred base URL depends on forwarded headers, ensure your proxy forwards them (e.g. `x-forwarded-host` and `x-forwarded-proto`).
 When using a static `domain` (non-MCD), `appBaseUrl` is required.
+In MCD:
+- If `appBaseUrl` is provided, that static value is used for callback and logout URLs.
+- If `appBaseUrl` is omitted, the SDK infers base URL from request headers.
+
 If you omit `appBaseUrl`, make sure every inferred origin is registered in Auth0 as an Allowed Callback URL and Allowed Logout URL.
 
 > [!IMPORTANT]
@@ -87,8 +99,22 @@ If you omit `appBaseUrl`, make sure every inferred origin is registered in Auth0
 
 ### Discovery Cache
 
-By default, the SDK caches discovery metadata and JWKS in memory using an LRU cache
-with a TTL of `600` seconds and a maximum of `100` entries. To override these defaults:
+By default, the SDK caches discovery metadata and JWKS in memory using an `LRU` cache
+with a `TTL` of `600` seconds and a maximum of `100` entries. To override these defaults:
+
+In `@auth0/auth0-fastify`, `discoveryCache` is forwarded to the underlying `@auth0/auth0-server-js` client.
+Cache reuse is scoped by resolved Auth0 domain (and mTLS mode), so each domain keeps its own discovery/JWKS entries.
+
+Most `Fastify` applications can keep the defaults, but you may want to adjust `discoveryCache` in the following cases:
+- Increase `maxEntries` if one `Fastify` process may handle more than `100` distinct Auth0 domains during the `TTL` window (common in larger MCD deployments).
+- Increase `ttl` if domains are reused frequently and you want fewer repeated discovery/JWKS fetches after expiry.
+- Decrease `ttl` if you want metadata/signing key changes to be picked up sooner.
+- Decrease `maxEntries` if memory is tighter than network round-trip cost.
+- Set `ttl` to `0` if you want to effectively disable discovery cache.
+
+Rule of thumb:
+
+- Set `maxEntries` close to the number of distinct Auth0 domains a single process is expected to serve during the `TTL` window, plus headroom.
 
 ```ts
 fastify.register(fastifyAuth0, {
@@ -97,13 +123,6 @@ fastify.register(fastifyAuth0, {
 });
 ```
 
-When to configure discoveryCache:
-
-- [Multiple Custom Domains](https://auth0.com/docs/customize/custom-domains/multiple-custom-domains).
-- High-throughput services where you want fewer metadata fetches.
-- Memory-constrained environments where you want a smaller cache.
-
-To effectively disable discovery cache reuse, set `discoveryCache.ttl` to `0`.
 
 ### Configuring the mounted routes
 
