@@ -1,15 +1,16 @@
 # Examples
 
 - [Configuration](#configuration)
-  - [Basic configuration](#basic-configuration)
+  - [Basic Configuration](#basic-configuration)
   - [Multiple Custom Domains (MCD)](#multiple-custom-domains-mcd)
-  - [Discovery cache configuration](#discovery-cache-configuration)
-  - [Configuring a `customFetch` implementation](#configuring-a-customfetch-implementation)
+  - [Discovery Cache Configuration](#discovery-cache-configuration)
+  - [Configuring a `customFetch` Implementation](#configuring-a-customfetch-implementation)
+- [The `ApiClient` Instance](#the-apiclient-instance)
 - [Protecting API Routes](#protecting-api-routes)
 
 ## Configuration
 
-### Basic configuration
+### Basic Configuration
 
 Register the Auth0 fastify plugin with the Fastify instance.
 
@@ -45,7 +46,7 @@ In these cases, your API must trust and validate tokens from multiple issuers in
 
 The SDK supports two approaches for configuring multiple allowed issuer domains:
 
-#### Static allowlist
+#### 1. Static Allowlist
 Use a static allow-list when the set of trusted issuer domains is known in advance and remains the same for all requests.
 This approach also works well for domain migration scenarios, where multiple domains (such as the canonical domain and one or more custom domains) need to be accepted during a transition period.
 The SDK validates incoming tokens against a predefined list of allowed domains.
@@ -69,7 +70,7 @@ const options: Auth0FastifyApiOptions = {
 fastify.register(fastifyAuth0, options);
 ```
 
-#### Dynamic resolver
+#### 2. Dynamic Domain Resolver
 Use a dynamic resolver when the set of allowed issuer domains needs to be determined at runtime based on the incoming request.
 The SDK provides a DomainsResolverContext containing request and token-derived information (url, headers, and unverifiedIss). You can use any combination of these inputs to determine the allowed issuer domains for the request.
 
@@ -123,14 +124,13 @@ It is the application's responsibility to decide how to use this information to 
 
 > [!WARNING]
 >
-> ⚠️ **Security note**  
 > When a domain resolver function is used, it may use request-derived values (such as `request.url`, `request.headers`, or `unverifiedIss`) to determine allowed issuer domains, which can be influenced by client input or intermediary infrastructure (for example, reverse proxies or load balancers).
 >
 > You must ensure that any inputs used in the resolver are **properly validated and come from trusted sources**. In particular, avoid relying directly on headers such as `Host` or `X-Forwarded-*` unless your proxy is correctly configured to sanitize and set them.
 > Misconfigured proxies or improper validation can introduce serious security risks, including authentication bypass by allowing tokens from unintended issuers.
 >
 
-### Discovery cache configuration
+### Discovery Cache Configuration
 
 You can control discovery and signing-key caching behavior with `discoveryCache`. This cache is not specific to MCD. It applies to all token verification flows.
 
@@ -169,7 +169,7 @@ fastify.register(fastifyAuth0, {
 });
 ```
 
-### Configuring a `customFetch` implementation
+### Configuring a `customFetch` Implementation
 
 The SDK allows to override the fetch implementation, used for making HTTP requests, by providing a custom implementation when registering the plugin:
 
@@ -188,7 +188,7 @@ fastify.register(fastifyAuth0, {
 });
 ```
 
-## The `ApiClient` instance
+## The `ApiClient` Instance
 
 Once the plugin is registered, an instance of the Auth0 `ApiClient` is available via `fastify.auth0Client`. This instance can be used to call any of the methods available on the `ApiClient`, such as `verifyAccessToken()` and `getAccessTokenForConnection()`.
 
