@@ -151,9 +151,21 @@ It is the application's responsibility to decide how to use this information to 
 >
 > When a domain resolver function is used, it may use request-derived values (such as `context.url`, `context.headers`, or `context.unverifiedIss`) to determine allowed issuer domains, which can be influenced by client input or intermediary infrastructure (for example, reverse proxies or load balancers).
 >
-> You must ensure that any inputs used in the resolver are **properly validated and come from trusted sources**. In particular, avoid relying directly on headers such as `Host` or `X-Forwarded-*` unless your proxy is correctly configured to sanitize and set them.
-> Misconfigured proxies or improper validation can introduce serious security risks, including authentication bypass by allowing tokens from unintended issuers.
+> Do not trust request-derived values directly when deciding which issuer domains are allowed. Use values such as `context.url`, `context.headers`, or `context.unverifiedIss` only to map known and expected request values to a fixed list of allowed issuer domains that you control.
+> In particular, avoid relying directly on headers such as `Host` or `X-Forwarded-*` unless your framework or proxy setup already treats them as trusted inputs. Misconfigured proxies or loose matching can cause the SDK to accept tokens from unintended issuers.
 >
+> Also, `context.unverifiedIss` comes from the token before signature verification and must not be trusted by itself.
+>
+
+### `domain` vs `domains` Configuration
+This section explains the roles of `domain` and `domains`, and how the SDK determines which configuration is used for access token validation.
+- When both `domain` and `domains` are configured, the SDK uses `domains` exclusively for access token verification.
+- The `domain` option should be retained only if your application also performs client-side flows (for example, `getAccessTokenForConnection()` or `getTokenByExchangeProfile()`).
+- When `domains` is specified, the SDK uses the provided issuer domains for discovery and token verification instead of `domain`.
+- If `domains` is not configured, the SDK falls back to `domain` for discovery and token verification.
+
+These values must be provided exactly as configured in the Auth0 Dashboard.
+
 
 ## Discovery Cache Configuration
 
