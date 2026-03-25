@@ -2,9 +2,9 @@
 
 - [Configuration](#configuration)
   - [Basic Configuration](#basic-configuration)
+  - [Configuring a `customFetch` Implementation](#configuring-a-customfetch-implementation)
 - [Multiple Custom Domains (MCD)](#multiple-custom-domains-mcd)
 - [Discovery Cache Configuration](#discovery-cache-configuration)
-- [Configuring a `customFetch` Implementation](#configuring-a-customfetch-implementation)
 - [The `ApiClient` Instance](#the-apiclient-instance)
 - [Protecting API Routes](#protecting-api-routes)
 
