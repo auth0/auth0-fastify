@@ -92,15 +92,22 @@ fastify.register(fastifyAuth0, options);
 Use a dynamic resolver when the set of allowed issuer domains needs to be determined at runtime based on the incoming request.
 The SDK provides a DomainsResolverContext containing request and token-derived information (url, headers, and unverifiedIss). You can use any combination of these inputs to determine the allowed issuer domains for the request.
 
-In the following example, a single API application is accessed via two domains: 
-- `api.brand1.com`
-- `api.brand2.com`
+In the following example, a single API application is accessed through two domains:
 
-Each domain is associated with a different Auth0 custom domain:
-- `api.brand1.com` → `brand1.auth.example.com`
-- `api.brand2.com` → `brand2.auth.example.com`
+- `https://api.brand1.com/`
+- `https://api.brand2.com/`
 
-Using a dynamic resolver, you can determine the allowed issuer domains based on the incoming request’s hostname. This allows you to control which issuers the SDK should trust for each request.
+Each domain should only accept tokens issued by its corresponding Auth0 custom domains.
+
+- `https://api.brand1.com/` should accept tokens issued by:
+  - `brand1-en.auth.example.com`
+  - `brand1-jp.auth.example.com`
+
+- `https://api.brand2.com/` should accept tokens issued by:
+  - `brand2-en.auth.example.com`
+  - `brand2-jp.auth.example.com`
+
+To enforce this behavior, you can configure a dynamic domain resolver that determines the allowed issuer domains based on the incoming request.
 ```ts
 import fastifyAuth0, {
   type DomainsResolver,
@@ -111,14 +118,14 @@ const fastify = Fastify({
   logger: true,
 });
 
-const domainsResolver: DomainsResolver = ({ url }: DomainsResolverContext) => {
-  const host = url ? new URL(url).hostname : undefined;
+const domainsResolver: DomainsResolver = (context: DomainsResolverContext) => {
+  const host = context.url ? new URL(context.url).hostname : undefined;
   if (host === 'api.brand1.com') {
-    return ['brand1.auth.example.com'];
+    return ['brand1-en.auth.example.com', 'brand1-jp.auth.example.com'];
   }
 
   if (host === 'api.brand2.com') {
-    return ['brand2.auth.example.com'];
+    return ['brand2-en.auth.example.com', 'brand2-jp.auth.example.com'];
   }
 
   // fallback to canonical domain
@@ -128,7 +135,7 @@ const domainsResolver: DomainsResolver = ({ url }: DomainsResolverContext) => {
 fastify.register(fastifyAuth0, {
   audience: '<AUTH0_AUDIENCE>',
   domain: '<AUTH0_DOMAIN>', // optional for verification-only, required for client flows
-  domains: domainsResolver,
+  domains: domainsResolver, // provide the resolver function instead of a static array
   algorithms: ['RS256'],
 });
 ```
@@ -142,7 +149,7 @@ It is the application's responsibility to decide how to use this information to 
 
 > [!WARNING]
 >
-> When a domain resolver function is used, it may use request-derived values (such as `request.url`, `request.headers`, or `unverifiedIss`) to determine allowed issuer domains, which can be influenced by client input or intermediary infrastructure (for example, reverse proxies or load balancers).
+> When a domain resolver function is used, it may use request-derived values (such as `context.url`, `context.headers`, or `context.unverifiedIss`) to determine allowed issuer domains, which can be influenced by client input or intermediary infrastructure (for example, reverse proxies or load balancers).
 >
 > You must ensure that any inputs used in the resolver are **properly validated and come from trusted sources**. In particular, avoid relying directly on headers such as `Host` or `X-Forwarded-*` unless your proxy is correctly configured to sanitize and set them.
 > Misconfigured proxies or improper validation can introduce serious security risks, including authentication bypass by allowing tokens from unintended issuers.
