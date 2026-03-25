@@ -2,9 +2,9 @@
 
 - [Configuration](#configuration)
   - [Basic Configuration](#basic-configuration)
-  - [Multiple Custom Domains (MCD)](#multiple-custom-domains-mcd)
-  - [Discovery Cache Configuration](#discovery-cache-configuration)
-  - [Configuring a `customFetch` Implementation](#configuring-a-customfetch-implementation)
+- [Multiple Custom Domains (MCD)](#multiple-custom-domains-mcd)
+- [Discovery Cache Configuration](#discovery-cache-configuration)
+- [Configuring a `customFetch` Implementation](#configuring-a-customfetch-implementation)
 - [The `ApiClient` Instance](#the-apiclient-instance)
 - [Protecting API Routes](#protecting-api-routes)
 
@@ -30,11 +30,29 @@ fastify.register(fastifyAuth0, {
 The `AUTH0_DOMAIN` can be obtained from the [Auth0 Dashboard](https://manage.auth0.com) once you've created an application. 
 The `AUTH0_AUDIENCE` is the identifier of the API that is being called. You can find this in the API section of the Auth0 dashboard.
 
+### Configuring a `customFetch` Implementation
 
-### Multiple Custom Domains (MCD)
+The SDK allows to override the fetch implementation, used for making HTTP requests, by providing a custom implementation when registering the plugin:
+
+```ts
+import fastifyAuth0 from '@auth0/auth0-fastify-api';
+
+const fastify = Fastify({
+  logger: true,
+});
+
+fastify.register(fastifyAuth0, {
+  /* ... */
+  customFetch: async (input, init) => {
+    // Custom fetch implementation
+  },
+});
+```
+
+## Multiple Custom Domains (MCD)
 Multiple Custom Domains (MCD) support enables a single API application to accept access tokens issued by multiple domains associated with the same Auth0 tenant, including the `canonical domain` and its `custom domains`.
 
-This is commonly required in scenarios such as:
+This is commonly required in scenarios such as: 
 - Multi-brand applications (B2C) where each brand uses a different custom domain but they all share the same API.
 - A single API serves multiple frontend applications that use different custom domains.
 - A gradual migration from the canonical domain to a custom domain, where both domains need to be supported during the transition period.
@@ -46,7 +64,7 @@ In these cases, your API must trust and validate tokens from multiple issuers in
 
 The SDK supports two approaches for configuring multiple allowed issuer domains:
 
-#### 1. Static Allowlist
+### 1. Static Allowlist
 Use a static allow-list when the set of trusted issuer domains is known in advance and remains the same for all requests.
 This approach also works well for domain migration scenarios, where multiple domains (such as the canonical domain and one or more custom domains) need to be accepted during a transition period.
 The SDK validates incoming tokens against a predefined list of allowed domains.
@@ -70,7 +88,7 @@ const options: Auth0FastifyApiOptions = {
 fastify.register(fastifyAuth0, options);
 ```
 
-#### 2. Dynamic Domain Resolver
+### 2. Dynamic Domain Resolver
 Use a dynamic resolver when the set of allowed issuer domains needs to be determined at runtime based on the incoming request.
 The SDK provides a DomainsResolverContext containing request and token-derived information (url, headers, and unverifiedIss). You can use any combination of these inputs to determine the allowed issuer domains for the request.
 
@@ -130,7 +148,7 @@ It is the application's responsibility to decide how to use this information to 
 > Misconfigured proxies or improper validation can introduce serious security risks, including authentication bypass by allowing tokens from unintended issuers.
 >
 
-### Discovery Cache Configuration
+## Discovery Cache Configuration
 
 You can control discovery and signing-key caching behavior with `discoveryCache`. This cache is not specific to MCD. It applies to all token verification flows.
 
@@ -166,25 +184,6 @@ fastify.register(fastifyAuth0, {
   domain: '<AUTH0_DOMAIN>',
   audience: '<AUTH0_AUDIENCE>',
   discoveryCache: { ttl: 600, maxEntries: 100 },
-});
-```
-
-### Configuring a `customFetch` Implementation
-
-The SDK allows to override the fetch implementation, used for making HTTP requests, by providing a custom implementation when registering the plugin:
-
-```ts
-import fastifyAuth0 from '@auth0/auth0-fastify-api';
-
-const fastify = Fastify({
-  logger: true,
-});
-
-fastify.register(fastifyAuth0, {
-  /* ... */
-  customFetch: async (input, init) => {
-    // Custom fetch implementation
-  },
 });
 ```
 
