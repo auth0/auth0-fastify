@@ -180,7 +180,7 @@ async function auth0FastifyApi(fastify: FastifyInstance, options: Auth0FastifyAp
       try {
         const verifyOptions: VerifyAccessTokenOptions = {
           accessToken,
-          url: buildRequestUrl(request),
+          httpUrl: buildRequestUrl(request),
           headers: request.headers as Record<string, string | string[] | undefined>,
         };
 
