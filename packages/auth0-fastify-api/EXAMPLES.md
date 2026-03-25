@@ -147,6 +147,8 @@ The resolver receives a `DomainsResolverContext` object with:
 
 It is the application's responsibility to decide how to use this information to return the allowed issuer domains. This allows the application to control which issuers the SDK can verify tokens from on a per-request basis. The resolver must return a non-empty array of domain strings.
 
+<br>
+
 > [!WARNING]
 >
 > When a domain resolver function is used, it may use request-derived values (such as `context.url`, `context.headers`, or `context.unverifiedIss`) to determine allowed issuer domains, which can be influenced by client input or intermediary infrastructure (for example, reverse proxies or load balancers).
@@ -156,6 +158,8 @@ It is the application's responsibility to decide how to use this information to 
 >
 > Also, `context.unverifiedIss` comes from the token before signature verification and must not be trusted by itself.
 >
+
+<br>
 
 ### `domain` vs `domains` Configuration
 This section explains the roles of `domain` and `domains`, and how the SDK determines which configuration is used for access token validation.
