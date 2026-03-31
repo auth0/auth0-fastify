@@ -59,12 +59,9 @@ This is commonly required in scenarios such as:
 
 In these cases, your API must trust and validate tokens from multiple issuers instead of a single domain.
 
-> [!IMPORTANT]  
-> The `domains` configuration is intended for a single `Auth0` tenant and should include only that tenant’s canonical domain (for example, `your-tenant.auth0.com`) and its associated custom domains (for example, `brand1.auth.example.com`, `brand2.auth.example.com`). It is not designed to support domains from multiple `Auth0` tenants.
+The SDK supports two approaches for configuring multiple allowed issuer domains `Static Allowlist` and `Dynamic Domain Resolver`. 
 
-The SDK supports two approaches for configuring multiple allowed issuer domains:
-
-### 1. Static Allowlist
+### Static Allowlist
 Use a static allow-list when the set of trusted issuer domains is known in advance and remains the same for all requests.
 This approach also works well for domain migration scenarios, where multiple domains (such as the canonical domain and one or more custom domains) need to be accepted during a transition period.
 The SDK validates incoming tokens against a predefined list of allowed domains.
@@ -79,7 +76,6 @@ const fastify = Fastify({
 const options: Auth0FastifyApiOptions = {
   audience: '<AUTH0_AUDIENCE>',
   domains: [
-    'your-tenant.auth0.com',
     'brand1.auth.example.com',
     'brand2.auth.example.com',
   ],
@@ -88,7 +84,7 @@ const options: Auth0FastifyApiOptions = {
 fastify.register(fastifyAuth0, options);
 ```
 
-### 2. Dynamic Domain Resolver
+### Dynamic Domain Resolver
 Use a dynamic resolver when the set of allowed issuer domains needs to be determined at runtime based on the incoming request.
 The SDK provides a DomainsResolverContext containing request and token-derived information (url, headers, and unverifiedIss). You can use any combination of these inputs to determine the allowed issuer domains for the request.
 
@@ -128,8 +124,8 @@ const domainsResolver: DomainsResolver = (context: DomainsResolverContext) => {
     return ['brand2-en.auth.example.com', 'brand2-jp.auth.example.com'];
   }
 
-  // fallback to canonical domain
-  return ['your-tenant.auth0.com'];
+  // fallback to default custom domains
+  return ['default.auth.example.com'];
 };
 
 fastify.register(fastifyAuth0, {
@@ -147,20 +143,6 @@ The resolver receives a `DomainsResolverContext` object with:
 
 It is the application's responsibility to decide how to use this information to return the allowed issuer domains. This allows the application to control which issuers the SDK can verify tokens from on a per-request basis. The resolver must return a non-empty array of domain strings.
 
-<br>
-
-> [!WARNING]
->
-> When a domain resolver function is used, it may use request-derived values (such as `context.url`, `context.headers`, or `context.unverifiedIss`) to determine allowed issuer domains, which can be influenced by client input or intermediary infrastructure (for example, reverse proxies or load balancers).
->
-> Do not trust request-derived values directly when deciding which issuer domains are allowed. Use values such as `context.url`, `context.headers`, or `context.unverifiedIss` only to map known and expected request values to a fixed list of allowed issuer domains that you control.
-> In particular, avoid relying directly on headers such as `Host` or `X-Forwarded-*` unless your framework or proxy setup already treats them as trusted inputs. Misconfigured proxies or loose matching can cause the SDK to accept tokens from unintended issuers.
->
-> Also, `context.unverifiedIss` comes from the token before signature verification and must not be trusted by itself.
->
-
-<br>
-
 ### `domain` vs `domains` Configuration
 This section explains the roles of `domain` and `domains`, and how the SDK determines which configuration is used for access token validation.
 - When both `domain` and `domains` are configured, the SDK uses `domains` exclusively for access token verification.
@@ -169,6 +151,27 @@ This section explains the roles of `domain` and `domains`, and how the SDK deter
 - If `domains` is not configured, the SDK falls back to `domain` for discovery and token verification.
 
 These values must be provided exactly as configured in the Auth0 Dashboard.
+
+### Security Requirements
+When configuring `domains` or a domain resolver for Multiple Custom Domains (MCD), you are responsible for ensuring that only trusted issuer domains are returned.
+
+Mis-configuring the domain resolver is a critical security risk. It can cause the SDK to:
+- accept access tokens from unintended issuers
+- make discovery or JWKS requests to unintended domains
+
+**Single Tenant Limitation:**
+The `domains` configuration is intended only for multiple custom domains that belong to the same Auth0 tenant. It is not a supported mechanism for connecting multiple Auth0 tenants to a single API.
+
+**Fastify Request and Proxy Warning:**
+If your resolver uses request-derived values such as `context.url`, `context.headers`, or `context.unverifiedIss`, do not trust those values directly. Use them only to map known and expected request values to a fixed allowlist of issuer domains that you control.
+
+In particular:
+- `context.url` and host-related request data may depend on your Fastify and proxy configuration
+- if your application is behind a reverse proxy or load balancer, configure Fastify and your proxy so that host-related request information is trusted only when it comes from trusted infrastructure
+- do not rely directly on `Host` or `X-Forwarded-*` unless your deployment is configured to sanitize and trust them correctly
+- `context.unverifiedIss` comes from the token before signature verification and must not be trusted by itself
+
+Misconfigured proxy handling or loose resolver logic can cause the SDK to trust unintended issuer domains.
 
 
 ## Discovery Cache Configuration
