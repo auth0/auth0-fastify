@@ -2,12 +2,12 @@
 
 - [Configuration](#configuration)
   - [Basic configuration](#basic-configuration)
-  - [Multiple Custom Domains (MCD)](#multiple-custom-domains-mcd)
   - [Discovery Cache](#discovery-cache)
   - [Configuring the mounted routes](#configuring-the-mounted-routes)
 - [The `ServerClient` instance](#the-serverclient-instance)
 - [Protecting Routes](#protecting-routes)
 - [Requesting an Access Token to call an API](#requesting-an-access-token-to-call-an-api)
+- [Multiple Custom Domains (MCD)](#multiple-custom-domains-mcd)
 
 ## Configuration
 
@@ -39,63 +39,6 @@ openssl rand -hex 64
 ```
 
 The `APP_BASE_URL` is the URL that your application is running on. When developing locally, this is most commonly `http://localhost:3000`.
-
-### Multiple Custom Domains (MCD)
-
-`@auth0/auth0-fastify` uses `@auth0/auth0-server-js` under the hood for MCD support.
-For MCD, configure a `domain` resolver so the SDK can resolve the issuer per request.
-The resolver receives the same per-request `StoreOptions` object (`{ request, reply }` in Fastify) that the SDK passes internally to `auth0-server-js`.
-
-```ts
-import fastifyAuth0, { DomainResolver } from '@auth0/auth0-fastify';
-import type { StoreOptions } from '@auth0/auth0-fastify';
-
-const domainResolver: DomainResolver<StoreOptions> = async (storeOptions) => {
-  const host = storeOptions?.request?.headers.host;
-  // Customer-provided mapping logic for resolving the correct Auth0 domain.
-  const hostToAuth0Domain: Record<string, string> = {
-    'app-a.example.com': 'tenant-a.us.auth0.com',
-    'app-b.example.com': 'tenant-b.us.auth0.com',
-  };
-
-  // Resolver must return a non-empty domain string.
-  return host ? hostToAuth0Domain[host] ?? 'default-tenant.us.auth0.com' : 'default-tenant.us.auth0.com';
-};
-
-fastify.register(fastifyAuth0, {
-  domain: domainResolver,
-  // Optional in MCD. If omitted, base URL is inferred from request host/proto.
-  appBaseUrl: '<APP_BASE_URL>',
-  clientId: '<AUTH0_CLIENT_ID>',
-  clientSecret: '<AUTH0_CLIENT_SECRET>',
-  sessionSecret: '<SESSION_SECRET>',
-});
-```
-
-If your resolver or inferred base URL depends on forwarded headers, ensure your proxy forwards them (e.g. `x-forwarded-host` and `x-forwarded-proto`).
-When using a static `domain` (non-MCD), `appBaseUrl` is required.
-In MCD:
-- If `appBaseUrl` is provided, that static value is used for callback and logout URLs.
-- If `appBaseUrl` is omitted, the SDK infers base URL from request headers.
-
-If you omit `appBaseUrl`, make sure every inferred origin is registered in Auth0 as an Allowed Callback URL and Allowed Logout URL.
-
-> [!IMPORTANT]
->
-> When `appBaseUrl` is omitted in MCD, the SDK infers it from request headers.
-> While convenient, this assumes that proxy headers are trusted.
->
-> If your deployment does not strictly control the `Host` or `x-forwarded-*`
-> headers, an attacker could influence redirect or logout URLs. In such cases,
-> provide a static `appBaseUrl` or validate headers at the edge.
-
-> [!IMPORTANT]  
-> You will need to register the following URLs in your Auth0 Application via the [Auth0 Dashboard](https://manage.auth0.com):
->
-> - Add `http://localhost:3000/auth/callback` to the list of **Allowed Callback URLs**
-> - Add `http://localhost:3000` to the list of **Allowed Logout URLs**
-
-
 
 ### Discovery Cache
 
@@ -236,3 +179,81 @@ Retrieving the token can be achieved by using `getAccessToken`:
 const accessTokenResult = await fastify.auth0Client.getAccessToken({ request, reply });
 console.log(accessTokenResult.accessToken);
 ```
+
+## Multiple Custom Domains (MCD)
+
+`Multiple Custom Domains` (MCD) lets you resolve the Auth0 domain per request while using a single Fastify plugin instance. This is useful when one application serves multiple customer domains (for example, `brand-1.my-app.com` and `brand-2.my-app.com`), each mapped to a different `Auth0` custom domain.
+
+`MCD` is enabled by providing a `domain resolver function` instead of a static domain string, enabling you to dynamically define the `Auth0` custom domain at run-time.
+
+Resolver mode is intended for the custom domains of a single `Auth0` tenant. It is not a supported way to connect multiple `Auth0` tenants to one application.
+
+### Dynamic Domain Resolver
+
+Provide a resolver function to select the domain at runtime. The resolver should return the `Auth0 Custom Domain` (for example, `brand-1.custom-domain.com`). Returning `null` or an empty value throws `InvalidConfigurationError`.
+The resolver receives the same per-request `StoreOptions` object (`{ request, reply }` in `Fastify`) that the plugin passes internally to `auth0-server-js`.
+
+#### Scenario 1: Host-based resolver with default fallback
+
+```ts
+import fastifyAuth0, { DomainResolver } from '@auth0/auth0-fastify';
+import type { StoreOptions } from '@auth0/auth0-fastify';
+
+const defaultAuth0Domain = 'auth.custom-domain.com';
+
+const domainResolver: DomainResolver<StoreOptions> = async (storeOptions) => {
+  const host = storeOptions?.request?.headers.host;
+  const domains = {
+    'brand-1.my-app.com': 'auth.custom-domain-1.com',
+    'brand-2.my-app.com': 'auth.custom-domain-2.com',
+  };
+
+  return host ? domains[host] ?? defaultAuth0Domain : defaultAuth0Domain;
+};
+
+fastify.register(fastifyAuth0, {
+  domain: domainResolver,
+  clientId: '<AUTH0_CLIENT_ID>',
+  clientSecret: '<AUTH0_CLIENT_SECRET>',
+  sessionSecret: '<SESSION_SECRET>',
+  appBaseUrl: '<APP_BASE_URL>',
+});
+```
+
+#### Scenario 2: Header-to-domain map (trusted app request context)
+
+```ts
+const headerValueToAuth0Domain: Record<string, string> = {
+  workspace_a: 'workspace-a.custom-domain.com',
+  workspace_b: 'workspace-b.custom-domain.com',
+};
+
+const domainResolver: DomainResolver<StoreOptions> = (storeOptions) => {
+  // Example app header used for routing. This is app-specific context, not Auth0 tenant metadata.
+  const routingKey = storeOptions?.request?.headers['x-tenant-id'];
+  if (!routingKey) return 'auth.custom-domain.com';
+  return headerValueToAuth0Domain[routingKey] ?? 'auth.custom-domain.com';
+};
+```
+
+
+### Resolver Mode
+
+Resolver mode means `domain` is configured as a resolver function. The plugin then passes per-request `storeOptions` into the underlying `ServerClient` so it can choose the correct `Auth0` domain for the current request.
+- When you use the mounted routes, `{ request, reply }` is passed automatically.
+- If you call `fastify.auth0Client` directly from your own routes, continue to pass `{ request, reply }` to those methods.
+- If `appBaseUrl` is provided, that static value is used for callback and logout URLs.
+- If `appBaseUrl` is omitted, the SDK infers the base URL from request headers.
+
+If you omit `appBaseUrl`, make sure every inferred origin is registered in Auth0 as an `Allowed Callback URL` and `Allowed Logout URL`.
+
+
+
+### Security Requirements
+
+When configuring SDKs to resolve tenant custom domains via the domain resolver functions, you are responsible for ensuring that all resolved domains are trusted. Mis-configuring the domain resolver is a critical security risk that can lead to authentication bypass on the `relying party` (RP) or expose the application to `Server-Side Request Forgery` (SSRF).
+
+**Single Tenant Limitation:** The domain resolvers are intended solely for multiple domains belonging to the same Auth0 tenant. It is not a supported mechanism for connecting multiple Auth0 tenants to a single application.
+
+**Secure Proxy Requirement:** When using `Multiple Custom Domains` (MCD), your application must be deployed behind a secure `Edge` or `Reverse Proxy` (e.g., `Cloudflare`, `Nginx`, or `AWS ALB`). The proxy must be configured to sanitize and overwrite `Host` and `X-Forwarded-Host` headers before they reach your application. Without a trusted proxy layer to validate these headers, an attacker can manipulate the domain resolution process. This can result in malicious redirects, where users are sent to `unauthorized` or `fraudulent` endpoints during the login and logout flows.
+
