@@ -2,9 +2,15 @@ name: SCA
 
 on:
   push:
-    branches: ["master", "main"]
+    branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
   snyk-cli:
-    uses: atko-security/devsecops-tooling/.github/workflows/sca-scan.yml@main
+    uses: auth0/devsecops-tooling/.github/workflows/sca-scan.yml@main
+    with:
+      pre-scan-commands: "npm install"
+      additional-arguments: "--all-projects --exclude=README.md,examples"
+      node-version: 24
     secrets: inherit
