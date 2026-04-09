@@ -1,6 +1,7 @@
 import type {
   FastifyInstance,
   FastifyRequest,
+  RouteGenericInterface,
   RawServerBase,
   RawRequestDefaultExpression,
   RawReplyDefaultExpression,
@@ -52,7 +53,12 @@ const assertAppBaseUrl = (value: string): string => {
 const getHeaderValue = (value: string | string[] | undefined): string | undefined =>
   Array.isArray(value) ? value[0] : value;
 
-const inferAppBaseUrlFromRequest = (request: FastifyRequest): string => {
+const inferAppBaseUrlFromRequest = <
+  RawServer extends RawServerBase = RawServerDefault,
+  RawRequest extends RawRequestDefaultExpression<RawServer> = RawRequestDefaultExpression<RawServer>
+>(
+  request: FastifyRequest<RouteGenericInterface, RawServer, RawRequest>
+): string => {
   const hostHeader = getHeaderValue(request.headers['x-forwarded-host']) ?? getHeaderValue(request.headers.host);
   if (!hostHeader) {
     throw new Error('Unable to infer appBaseUrl: missing host header.');
@@ -152,7 +158,7 @@ export default fp(async function auth0Fastify<
   }
   const staticRedirectUri = staticAppBaseUrl ? createRouteUrl(callbackPath, staticAppBaseUrl) : undefined;
 
-  const resolveAppBaseUrl = (request: FastifyRequest): string => {
+  const resolveAppBaseUrl = (request: FastifyRequest<RouteGenericInterface, RawServer, RawRequest>): string => {
     if (staticAppBaseUrl) {
       return staticAppBaseUrl;
     }
