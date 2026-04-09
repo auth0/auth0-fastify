@@ -1,5 +1,14 @@
 # Change Log
 
+## [v1.3.0](https://github.com/auth0/auth0-fastify/releases/tag/auth0-fastify-v1.3.0) (2026-04-09)
+[Full Changelog](https://github.com/auth0/auth0-fastify/compare/auth0-fastify-v1.2.0...auth0-fastify-v1.3.0)
+
+**Added**
+- feat(auth0-fastify): Add MCD support [#43](https://github.com/auth0/auth0-fastify/pull/43) ([nandan-bhat](https://github.com/nandan-bhat))
+
+**Fixed**
+- fix(auth0-fastify): make request and reply more abstract so that it can be used with http2 [#38](https://github.com/auth0/auth0-fastify/pull/38) ([frederikprijck](https://github.com/frederikprijck))
+
 ## [v1.2.0](https://github.com/auth0/auth0-fastify/releases/tag/auth0-fastify-v1.2.0) (2025-10-02)
 [Full Changelog](https://github.com/auth0/auth0-fastify/compare/auth0-fastify-v1.1.0...auth0-fastify-v1.2.0)
 
