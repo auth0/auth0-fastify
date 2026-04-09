@@ -86,7 +86,7 @@ fastify.register(fastifyAuth0, options);
 
 ### Dynamic Domain Resolver
 Use a dynamic resolver when the set of allowed issuer domains needs to be determined at runtime based on the incoming request.
-The SDK provides a DomainsResolverContext containing request and token-derived information (url, headers, and unverifiedIss). You can use any combination of these inputs to determine the allowed issuer domains for the request.
+The SDK provides a `DomainsResolverContext` containing request and token-derived information (`url`, `headers`, and `unverifiedIss`). You can use any combination of these inputs to determine the allowed issuer domains for the request.
 
 In the following example, a single API application is accessed through two domains:
 
@@ -150,7 +150,7 @@ This section explains the roles of `domain` and `domains`, and how the SDK deter
 - When `domains` is specified, the SDK uses the provided issuer domains for discovery and token verification instead of `domain`.
 - If `domains` is not configured, the SDK falls back to `domain` for discovery and token verification.
 
-These values must be provided exactly as configured in the Auth0 Dashboard.
+Prefer domain values exactly as shown in the Auth0 Dashboard (for example, `example.auth0.com`).
 
 ### Security Requirements
 When configuring `domains` or a domain resolver for Multiple Custom Domains (MCD), you are responsible for ensuring that only trusted issuer domains are returned.
@@ -166,9 +166,9 @@ The `domains` configuration is intended only for multiple custom domains that be
 If your resolver uses request-derived values such as `context.url`, `context.headers`, or `context.unverifiedIss`, do not trust those values directly. Use them only to map known and expected request values to a fixed allowlist of issuer domains that you control.
 
 In particular:
-- `context.url` and host-related request data may depend on your Fastify and proxy configuration
+- `context.url` is derived from Fastify's `request.host` and `request.protocol`, so configure Fastify `trustProxy` correctly if your application is behind a reverse proxy or load balancer
 - if your application is behind a reverse proxy or load balancer, configure Fastify and your proxy so that host-related request information is trusted only when it comes from trusted infrastructure
-- do not rely directly on `Host` or `X-Forwarded-*` unless your deployment is configured to sanitize and trust them correctly
+- if you inspect `context.headers` directly, do not rely on raw `Host` or `X-Forwarded-*` unless your deployment is configured to sanitize and trust them correctly
 - `context.unverifiedIss` comes from the token before signature verification and must not be trusted by itself
 
 Misconfigured proxy handling or loose resolver logic can cause the SDK to trust unintended issuer domains.

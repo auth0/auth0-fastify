@@ -513,7 +513,7 @@ test('should pass request url and headers to domains resolver', async () => {
     unverifiedIss?: string;
   } | undefined;
 
-  const fastify = Fastify();
+  const fastify = Fastify({ trustProxy: true });
   fastify.register(fastifyAuth0Api, {
     audience: '<audience>',
     domains: (context) => {
@@ -807,7 +807,7 @@ test('should return 401 when issuer not in resolved domains list', async () => {
   expect(res.json().error_description).toMatch(/issuer is not in the configured domain list/i);
 });
 
-test('should prefer x-forwarded-host and x-forwarded-proto when building url', async () => {
+test('should ignore x-forwarded-host and x-forwarded-proto when trustProxy is disabled', async () => {
   addHandlersForDomain(secondaryDomain);
 
   let resolvedContext: {
@@ -815,6 +815,51 @@ test('should prefer x-forwarded-host and x-forwarded-proto when building url', a
   } | undefined;
 
   const fastify = Fastify();
+  fastify.register(fastifyAuth0Api, {
+    audience: '<audience>',
+    domains: (context) => {
+      resolvedContext = context;
+      return [secondaryDomain];
+    },
+  });
+
+  const accessToken = await generateToken(secondaryDomain, 'user_123', '<audience>');
+
+  fastify.register(() => {
+    fastify.get(
+      '/test',
+      {
+        preHandler: fastify.requireAuth(),
+      },
+      async () => {
+        return 'OK';
+      }
+    );
+  });
+
+  const res = await fastify.inject({
+    method: 'GET',
+    url: '/test?x=1',
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      host: 'internal.local',
+      'x-forwarded-host': 'api.forwarded.example.com',
+      'x-forwarded-proto': 'https',
+    },
+  });
+
+  expect(res.statusCode).toBe(200);
+  expect(resolvedContext?.url).toBe('http://internal.local/test?x=1');
+});
+
+test('should use x-forwarded-host and x-forwarded-proto when trustProxy is enabled', async () => {
+  addHandlersForDomain(secondaryDomain);
+
+  let resolvedContext: {
+    url?: string;
+  } | undefined;
+
+  const fastify = Fastify({ trustProxy: true });
   fastify.register(fastifyAuth0Api, {
     audience: '<audience>',
     domains: (context) => {

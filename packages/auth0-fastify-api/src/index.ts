@@ -78,14 +78,16 @@ export type Auth0FastifyApiOptions =
       /**
        * Optional domain allowlist or resolver for access token verification.
        * When provided, token verification uses this instead of `domain`.
-       * Domains must be provided as bare hosts (no scheme); https and trailing slashes are normalized.
+       * Provide domains as shown in the Auth0 Dashboard (for example, "example.auth0.com").
+       * The underlying ApiClient also normalizes equivalent `https://` values without path, query, or fragment.
        */
       domains?: string[] | DomainsResolver;
     })
   | (Auth0FastifyApiCommonOptions & {
       /**
        * Domain allowlist or resolver for access token verification.
-       * Domains must be provided as bare hosts (no scheme); https and trailing slashes are normalized.
+       * Provide domains as shown in the Auth0 Dashboard (for example, "example.auth0.com").
+       * The underlying ApiClient also normalizes equivalent `https://` values without path, query, or fragment.
        */
       domains: string[] | DomainsResolver;
       domain?: never;
@@ -178,11 +180,15 @@ async function auth0FastifyApi(fastify: FastifyInstance, options: Auth0FastifyAp
       }
 
       try {
-        const verifyOptions: VerifyAccessTokenOptions = {
-          accessToken,
-          httpUrl: buildRequestUrl(request),
-          headers: request.headers as Record<string, string | string[] | undefined>,
-        };
+        const verifyOptions: VerifyAccessTokenOptions = options.domains
+          ? {
+              accessToken,
+              httpUrl: buildRequestUrl(request),
+              headers: request.headers as Record<string, string | string[] | undefined>,
+            }
+          : {
+              accessToken,
+            };
 
         const token = (await apiClient.verifyAccessToken(verifyOptions)) as Token;
 
@@ -219,20 +225,11 @@ function getToken(request: FastifyRequest): string | undefined {
 }
 
 function buildRequestUrl(request: FastifyRequest): string | undefined {
-  const forwardedHost = request.headers['x-forwarded-host'];
-  const hostHeader = Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost ?? request.headers.host;
-  if (!hostHeader) {
+  if (!request.host || !request.protocol) {
     return undefined;
   }
 
-  const forwardedProto = request.headers['x-forwarded-proto'];
-  const protoValue = Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto;
-  const protocol = (protoValue ?? request.protocol).toString().split(',')[0]?.trim();
-  if (!protocol) {
-    return undefined;
-  }
-
-  return `${protocol}://${hostHeader}${request.url}`;
+  return `${request.protocol}://${request.host}${request.url}`;
 }
 
 export type { DomainsResolver, DomainsResolverContext } from '@auth0/auth0-api-js';
