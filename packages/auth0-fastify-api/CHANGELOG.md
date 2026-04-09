@@ -38,3 +38,4 @@ In version 1.0.0, we have added the following features:
 - `requireAuth({ scopes })` method on `FastifyInstance` to protect endpoints.
 - `getToken()` method on `FastifyRequest` to retrieve the token from the header.
 - `user` property on `FastifyRequest` to expose the token claims.
+
