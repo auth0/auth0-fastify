@@ -1,5 +1,11 @@
 # Change Log
 
+## [v1.2.0](https://github.com/auth0/auth0-fastify/releases/tag/auth0-fastify-api-v1.2.0) (2026-04-09)
+[Full Changelog](https://github.com/auth0/auth0-fastify/compare/auth0-fastify-api-v1.1.0...auth0-fastify-api-v1.2.0)
+
+**Added**
+- feat(auth0-fastify-api): Add MCD support [#45](https://github.com/auth0/auth0-fastify/pull/45) ([nandan-bhat](https://github.com/nandan-bhat))
+
 ## [v1.1.0](https://github.com/auth0/auth0-fastify/releases/tag/auth0-fastify-api-v1.1.0) (2025-10-02)
 [Full Changelog](https://github.com/auth0/auth0-fastify/compare/auth0-fastify-api-v1.0.3...auth0-fastify-api-v1.1.0)
 
