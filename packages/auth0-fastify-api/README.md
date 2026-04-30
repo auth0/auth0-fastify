@@ -91,6 +91,52 @@ fastify.register(() => {
 > The above is to protect API routes by the means of a bearer token, and not server-side rendering routes using a session. 
 
 
+### On-Behalf-Of Token Exchange
+
+Use `fastify.auth0Client.getTokenOnBehalfOf()` when your Fastify API needs to call a downstream API on behalf of the same user, such as in an MCP server. The method exchanges the incoming access token for a new one scoped to the downstream API while preserving the user's identity.
+
+`getTokenOnBehalfOf()` requires a confidential client. Register the plugin with `clientId` and `clientSecret` (or a private key / mTLS credentials).
+
+```ts
+import fastifyAuth0Api from '@auth0/auth0-fastify-api';
+
+const fastify = Fastify({ logger: true });
+
+fastify.register(fastifyAuth0Api, {
+  domain: '<AUTH0_DOMAIN>',
+  audience: '<AUTH0_AUDIENCE>',
+  clientId: '<AUTH0_CLIENT_ID>',
+  clientSecret: '<AUTH0_CLIENT_SECRET>',
+});
+
+fastify.register(() => {
+  fastify.post(
+    '/schedule-meeting',
+    {
+      preHandler: fastify.requireAuth(),
+    },
+    async (request: FastifyRequest) => {
+      // request.getToken() returns the raw JWT without the `Bearer ` prefix.
+      const obo = await fastify.auth0Client!.getTokenOnBehalfOf(request.getToken()!, {
+        audience: 'https://calendar-api.example.com',
+        scope: 'calendar:read calendar:write',
+      });
+
+      const response = await fetch('https://calendar-api.example.com/meetings', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${obo.accessToken}` },
+        body: JSON.stringify(request.body),
+      });
+
+      return response.json();
+    }
+  );
+});
+```
+
+For a full walkthrough including error handling, act claim inspection, and the downstream verifier pattern, see the [On-Behalf-Of Token Exchange](https://github.com/auth0/auth0-fastify/blob/main/packages/auth0-fastify-api/EXAMPLES.md#on-behalf-of-token-exchange) section in [EXAMPLES.md](https://github.com/auth0/auth0-fastify/blob/main/packages/auth0-fastify-api/EXAMPLES.md).
+
+
 ## Feedback
 
 ### Contributing

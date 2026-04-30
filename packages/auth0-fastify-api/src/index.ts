@@ -232,4 +232,5 @@ function buildRequestUrl(request: FastifyRequest): string | undefined {
   return `${request.protocol}://${request.host}${request.url}`;
 }
 
-export type { DomainsResolver, DomainsResolverContext } from '@auth0/auth0-api-js';
+export type { DomainsResolver, DomainsResolverContext, OnBehalfOfTokenOptions, OnBehalfOfTokenResult } from '@auth0/auth0-api-js';
+export { getCurrentActor, getDelegationChain, MissingClientAuthError, TokenExchangeError } from '@auth0/auth0-api-js';
