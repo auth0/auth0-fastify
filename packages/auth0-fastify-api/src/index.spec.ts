@@ -507,11 +507,13 @@ test('should verify token with domains allowlist (no domain)', async () => {
 test('should pass request url and headers to domains resolver', async () => {
   addHandlersForDomain(secondaryDomain);
 
-  let resolvedContext: {
-    url?: string;
-    headers?: Record<string, string | string[] | undefined>;
-    unverifiedIss?: string;
-  } | undefined;
+  let resolvedContext:
+    | {
+        url?: string;
+        headers?: Record<string, string | string[] | undefined>;
+        unverifiedIss?: string;
+      }
+    | undefined;
 
   const fastify = Fastify({ trustProxy: true });
   fastify.register(fastifyAuth0Api, {
@@ -810,9 +812,11 @@ test('should return 401 when issuer not in resolved domains list', async () => {
 test('should ignore x-forwarded-host and x-forwarded-proto when trustProxy is disabled', async () => {
   addHandlersForDomain(secondaryDomain);
 
-  let resolvedContext: {
-    url?: string;
-  } | undefined;
+  let resolvedContext:
+    | {
+        url?: string;
+      }
+    | undefined;
 
   const fastify = Fastify();
   fastify.register(fastifyAuth0Api, {
@@ -855,9 +859,11 @@ test('should ignore x-forwarded-host and x-forwarded-proto when trustProxy is di
 test('should use x-forwarded-host and x-forwarded-proto when trustProxy is enabled', async () => {
   addHandlersForDomain(secondaryDomain);
 
-  let resolvedContext: {
-    url?: string;
-  } | undefined;
+  let resolvedContext:
+    | {
+        url?: string;
+      }
+    | undefined;
 
   const fastify = Fastify({ trustProxy: true });
   fastify.register(fastifyAuth0Api, {
@@ -994,6 +1000,73 @@ test('getTokenOnBehalfOf - should exchange an access token using fixed OBO token
     issuedTokenType: 'urn:ietf:params:oauth:token-type:access_token',
   });
   expect(result.tokenType?.toLowerCase()).toBe('bearer');
+});
+
+test('getTokenOnBehalfOf - should exchange an access token using client assertion authentication', async () => {
+  const capturedBody: { current?: URLSearchParams } = {};
+  const keyPair = (await crypto.subtle.generateKey(
+    {
+      name: 'RSASSA-PKCS1-v1_5',
+      modulusLength: 2048,
+      publicExponent: new Uint8Array([1, 0, 1]),
+      hash: 'SHA-256',
+    },
+    true,
+    ['sign', 'verify']
+  )) as CryptoKeyPair;
+
+  server.use(
+    http.post(`https://${domain}/custom/token`, async ({ request }) => {
+      capturedBody.current = new URLSearchParams(await request.text());
+
+      if (
+        capturedBody.current.get('grant_type') === 'urn:ietf:params:oauth:grant-type:token-exchange' &&
+        capturedBody.current.get('client_id') === 'my-client-id' &&
+        capturedBody.current.get('client_secret') === null &&
+        capturedBody.current.get('client_assertion') &&
+        capturedBody.current.get('client_assertion_type') ===
+          'urn:ietf:params:oauth:client-assertion-type:jwt-bearer' &&
+        capturedBody.current.get('subject_token') === 'incoming-access-token' &&
+        capturedBody.current.get('subject_token_type') === 'urn:ietf:params:oauth:token-type:access_token' &&
+        capturedBody.current.get('requested_token_type') === 'urn:ietf:params:oauth:token-type:access_token' &&
+        capturedBody.current.get('audience') === 'https://calendar-api.example.com'
+      ) {
+        return HttpResponse.json(
+          {
+            access_token: 'obo-access-token',
+            expires_in: 3600,
+            token_type: 'Bearer',
+            issued_token_type: 'urn:ietf:params:oauth:token-type:access_token',
+          },
+          { status: 200 }
+        );
+      }
+
+      return HttpResponse.json(
+        { error: 'invalid_request', error_description: 'Unexpected request parameters.' },
+        { status: 400 }
+      );
+    })
+  );
+
+  const fastify = Fastify();
+  fastify.register(fastifyAuth0Api, {
+    domain,
+    audience: '<audience>',
+    clientId: 'my-client-id',
+    clientAssertionSigningKey: keyPair.privateKey,
+  });
+
+  await fastify.ready();
+
+  const result = await fastify.auth0Client!.getTokenOnBehalfOf('incoming-access-token', {
+    audience: 'https://calendar-api.example.com',
+  });
+
+  expect(capturedBody.current).toBeDefined();
+  expect(capturedBody.current?.get('client_assertion')).toBeTruthy();
+  expect(capturedBody.current?.get('client_secret')).toBeNull();
+  expect(result.accessToken).toBe('obo-access-token');
 });
 
 test('getTokenOnBehalfOf - should not expose idToken or refreshToken', async () => {
