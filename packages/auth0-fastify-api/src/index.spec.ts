@@ -3,7 +3,7 @@ import { setupServer } from 'msw/node';
 import { http, HttpResponse } from 'msw';
 import { generateToken, jwks } from './test-utils/tokens.js';
 import Fastify from 'fastify';
-import fastifyAuth0Api from './index.js';
+import fastifyAuth0Api, { MissingClientAuthError, TokenExchangeError } from './index.js';
 
 const createOpenIdConfiguration = (domain: string) => ({
   issuer: `https://${domain}/`,
@@ -507,11 +507,13 @@ test('should verify token with domains allowlist (no domain)', async () => {
 test('should pass request url and headers to domains resolver', async () => {
   addHandlersForDomain(secondaryDomain);
 
-  let resolvedContext: {
-    url?: string;
-    headers?: Record<string, string | string[] | undefined>;
-    unverifiedIss?: string;
-  } | undefined;
+  let resolvedContext:
+    | {
+        url?: string;
+        headers?: Record<string, string | string[] | undefined>;
+        unverifiedIss?: string;
+      }
+    | undefined;
 
   const fastify = Fastify({ trustProxy: true });
   fastify.register(fastifyAuth0Api, {
@@ -810,9 +812,11 @@ test('should return 401 when issuer not in resolved domains list', async () => {
 test('should ignore x-forwarded-host and x-forwarded-proto when trustProxy is disabled', async () => {
   addHandlersForDomain(secondaryDomain);
 
-  let resolvedContext: {
-    url?: string;
-  } | undefined;
+  let resolvedContext:
+    | {
+        url?: string;
+      }
+    | undefined;
 
   const fastify = Fastify();
   fastify.register(fastifyAuth0Api, {
@@ -855,9 +859,11 @@ test('should ignore x-forwarded-host and x-forwarded-proto when trustProxy is di
 test('should use x-forwarded-host and x-forwarded-proto when trustProxy is enabled', async () => {
   addHandlersForDomain(secondaryDomain);
 
-  let resolvedContext: {
-    url?: string;
-  } | undefined;
+  let resolvedContext:
+    | {
+        url?: string;
+      }
+    | undefined;
 
   const fastify = Fastify({ trustProxy: true });
   fastify.register(fastifyAuth0Api, {
@@ -895,4 +901,279 @@ test('should use x-forwarded-host and x-forwarded-proto when trustProxy is enabl
 
   expect(res.statusCode).toBe(200);
   expect(resolvedContext?.url).toBe('https://api.forwarded.example.com/test?x=1');
+});
+
+// ---------------------------------------------------------------------------
+// getTokenOnBehalfOf tests
+// ---------------------------------------------------------------------------
+
+test('getTokenOnBehalfOf - should throw MissingClientAuthError when no clientId configured', async () => {
+  const fastify = Fastify();
+  fastify.register(fastifyAuth0Api, {
+    domain,
+    audience: '<audience>',
+  });
+
+  await fastify.ready();
+
+  await expect(
+    fastify.auth0Client!.getTokenOnBehalfOf('incoming-access-token', {
+      audience: 'https://calendar-api.example.com',
+    })
+  ).rejects.toThrow(MissingClientAuthError);
+});
+
+test('getTokenOnBehalfOf - should throw MissingClientAuthError when clientSecret is not configured', async () => {
+  const fastify = Fastify();
+  fastify.register(fastifyAuth0Api, {
+    domain,
+    audience: '<audience>',
+    clientId: 'my-client-id',
+    // no clientSecret — should throw
+  });
+
+  await fastify.ready();
+
+  await expect(
+    fastify.auth0Client!.getTokenOnBehalfOf('incoming-access-token', {
+      audience: 'https://calendar-api.example.com',
+    })
+  ).rejects.toThrow(MissingClientAuthError);
+});
+
+test('getTokenOnBehalfOf - should exchange an access token using fixed OBO token types', async () => {
+  let capturedBody: URLSearchParams | null = null;
+
+  server.use(
+    http.post(`https://${domain}/custom/token`, async ({ request }) => {
+      capturedBody = new URLSearchParams(await request.text());
+
+      if (
+        capturedBody.get('grant_type') === 'urn:ietf:params:oauth:grant-type:token-exchange' &&
+        capturedBody.get('client_id') === 'my-client-id' &&
+        capturedBody.get('client_secret') === 'my-client-secret' &&
+        capturedBody.get('subject_token') === 'incoming-access-token' &&
+        capturedBody.get('subject_token_type') === 'urn:ietf:params:oauth:token-type:access_token' &&
+        capturedBody.get('requested_token_type') === 'urn:ietf:params:oauth:token-type:access_token' &&
+        capturedBody.get('audience') === 'https://calendar-api.example.com' &&
+        capturedBody.get('scope') === 'calendar:read calendar:write'
+      ) {
+        return HttpResponse.json(
+          {
+            access_token: 'obo-access-token',
+            expires_in: 3600,
+            scope: 'calendar:read calendar:write',
+            token_type: 'Bearer',
+            issued_token_type: 'urn:ietf:params:oauth:token-type:access_token',
+          },
+          { status: 200 }
+        );
+      }
+
+      return HttpResponse.json(
+        { error: 'invalid_request', error_description: 'Unexpected request parameters.' },
+        { status: 400 }
+      );
+    })
+  );
+
+  const fastify = Fastify();
+  fastify.register(fastifyAuth0Api, {
+    domain,
+    audience: '<audience>',
+    clientId: 'my-client-id',
+    clientSecret: 'my-client-secret',
+  });
+
+  await fastify.ready();
+
+  const result = await fastify.auth0Client!.getTokenOnBehalfOf('incoming-access-token', {
+    audience: 'https://calendar-api.example.com',
+    scope: 'calendar:read calendar:write',
+  });
+
+  expect(capturedBody).not.toBeNull();
+  expect(result).toMatchObject({
+    accessToken: 'obo-access-token',
+    expiresAt: expect.any(Number),
+    scope: 'calendar:read calendar:write',
+    issuedTokenType: 'urn:ietf:params:oauth:token-type:access_token',
+  });
+  expect(result.tokenType?.toLowerCase()).toBe('bearer');
+});
+
+test('getTokenOnBehalfOf - should exchange an access token using client assertion authentication', async () => {
+  const capturedBody: { current?: URLSearchParams } = {};
+  const keyPair = (await crypto.subtle.generateKey(
+    {
+      name: 'RSASSA-PKCS1-v1_5',
+      modulusLength: 2048,
+      publicExponent: new Uint8Array([1, 0, 1]),
+      hash: 'SHA-256',
+    },
+    true,
+    ['sign', 'verify']
+  )) as CryptoKeyPair;
+
+  server.use(
+    http.post(`https://${domain}/custom/token`, async ({ request }) => {
+      capturedBody.current = new URLSearchParams(await request.text());
+
+      if (
+        capturedBody.current.get('grant_type') === 'urn:ietf:params:oauth:grant-type:token-exchange' &&
+        capturedBody.current.get('client_id') === 'my-client-id' &&
+        capturedBody.current.get('client_secret') === null &&
+        capturedBody.current.get('client_assertion') &&
+        capturedBody.current.get('client_assertion_type') ===
+          'urn:ietf:params:oauth:client-assertion-type:jwt-bearer' &&
+        capturedBody.current.get('subject_token') === 'incoming-access-token' &&
+        capturedBody.current.get('subject_token_type') === 'urn:ietf:params:oauth:token-type:access_token' &&
+        capturedBody.current.get('requested_token_type') === 'urn:ietf:params:oauth:token-type:access_token' &&
+        capturedBody.current.get('audience') === 'https://calendar-api.example.com'
+      ) {
+        return HttpResponse.json(
+          {
+            access_token: 'obo-access-token',
+            expires_in: 3600,
+            token_type: 'Bearer',
+            issued_token_type: 'urn:ietf:params:oauth:token-type:access_token',
+          },
+          { status: 200 }
+        );
+      }
+
+      return HttpResponse.json(
+        { error: 'invalid_request', error_description: 'Unexpected request parameters.' },
+        { status: 400 }
+      );
+    })
+  );
+
+  const fastify = Fastify();
+  fastify.register(fastifyAuth0Api, {
+    domain,
+    audience: '<audience>',
+    clientId: 'my-client-id',
+    clientAssertionSigningKey: keyPair.privateKey,
+  });
+
+  await fastify.ready();
+
+  const result = await fastify.auth0Client!.getTokenOnBehalfOf('incoming-access-token', {
+    audience: 'https://calendar-api.example.com',
+  });
+
+  expect(capturedBody.current).toBeDefined();
+  expect(capturedBody.current?.get('client_assertion')).toBeTruthy();
+  expect(capturedBody.current?.get('client_secret')).toBeNull();
+  expect(result.accessToken).toBe('obo-access-token');
+});
+
+test('getTokenOnBehalfOf - should not expose idToken or refreshToken', async () => {
+  // Auth0 does not return id_token or refresh_token as part of the OBO contract,
+  // but if they are present in the response the SDK must strip them from the result.
+  // Including id_token in the mock causes openid-client to attempt OIDC validation
+  // (nonce, azp, etc.) which always fails in a token exchange context, so only
+  // refresh_token is included here to cover the stripping assertion.
+  server.use(
+    http.post(`https://${domain}/custom/token`, async () => {
+      return HttpResponse.json(
+        {
+          access_token: 'obo-access-token',
+          expires_in: 3600,
+          token_type: 'Bearer',
+          issued_token_type: 'urn:ietf:params:oauth:token-type:access_token',
+          refresh_token: 'some-refresh-token',
+        },
+        { status: 200 }
+      );
+    })
+  );
+
+  const fastify = Fastify();
+  fastify.register(fastifyAuth0Api, {
+    domain,
+    audience: '<audience>',
+    clientId: 'my-client-id',
+    clientSecret: 'my-client-secret',
+  });
+
+  await fastify.ready();
+
+  const result = await fastify.auth0Client!.getTokenOnBehalfOf('incoming-access-token', {
+    audience: 'https://calendar-api.example.com',
+  });
+
+  expect(result).not.toHaveProperty('idToken');
+  expect(result).not.toHaveProperty('refreshToken');
+  expect(result.accessToken).toBe('obo-access-token');
+});
+
+test('getTokenOnBehalfOf - should throw TokenExchangeError when Auth0 rejects the exchange', async () => {
+  server.use(
+    http.post(`https://${domain}/custom/token`, () => {
+      return HttpResponse.json(
+        {
+          error: 'invalid_target',
+          error_description:
+            "The MCP server 'my-client-id' is not authorized to access the API 'https://calendar-api.example.com'.",
+        },
+        { status: 400 }
+      );
+    })
+  );
+
+  const fastify = Fastify();
+  fastify.register(fastifyAuth0Api, {
+    domain,
+    audience: '<audience>',
+    clientId: 'my-client-id',
+    clientSecret: 'my-client-secret',
+  });
+
+  await fastify.ready();
+
+  await expect(
+    fastify.auth0Client!.getTokenOnBehalfOf('incoming-access-token', {
+      audience: 'https://calendar-api.example.com',
+    })
+  ).rejects.toThrow(TokenExchangeError);
+});
+
+test('getTokenOnBehalfOf - should work with scope omitted (no scope in request)', async () => {
+  let capturedScope: string | null = 'not-set';
+
+  server.use(
+    http.post(`https://${domain}/custom/token`, async ({ request }) => {
+      const body = new URLSearchParams(await request.text());
+      capturedScope = body.get('scope');
+      return HttpResponse.json(
+        {
+          access_token: 'obo-access-token',
+          expires_in: 3600,
+          token_type: 'Bearer',
+          issued_token_type: 'urn:ietf:params:oauth:token-type:access_token',
+        },
+        { status: 200 }
+      );
+    })
+  );
+
+  const fastify = Fastify();
+  fastify.register(fastifyAuth0Api, {
+    domain,
+    audience: '<audience>',
+    clientId: 'my-client-id',
+    clientSecret: 'my-client-secret',
+  });
+
+  await fastify.ready();
+
+  const result = await fastify.auth0Client!.getTokenOnBehalfOf('incoming-access-token', {
+    audience: 'https://calendar-api.example.com',
+    // scope intentionally omitted
+  });
+
+  expect(capturedScope).toBeNull();
+  expect(result.accessToken).toBe('obo-access-token');
 });

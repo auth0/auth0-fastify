@@ -38,19 +38,20 @@ type Auth0FastifyApiCommonOptions = {
   algorithms?: string[];
   /**
    * The optional client ID of the application.
-   * Required when using the `getAccessTokenForConnection` method.
+   * Required when using the `getAccessTokenForConnection`, `getTokenByExchangeProfile`,
+   * or `getTokenOnBehalfOf` methods.
    */
   clientId?: string;
   /**
    * The optional client secret of the application.
    * At least one of `clientSecret` or `clientAssertionSigningKey` is required when using the
-   * `getAccessTokenForConnection` method.
+   * `getAccessTokenForConnection`, `getTokenByExchangeProfile`, or `getTokenOnBehalfOf` methods.
    */
   clientSecret?: string;
   /**
    * The optional client assertion signing key to use.
    * At least one of `clientSecret` or `clientAssertionSigningKey` is required when using the
-   * `getAccessTokenForConnection` method.
+   * `getAccessTokenForConnection`, `getTokenByExchangeProfile`, or `getTokenOnBehalfOf` methods.
    */
   clientAssertionSigningKey?: string | CryptoKey;
   /**
@@ -232,4 +233,10 @@ function buildRequestUrl(request: FastifyRequest): string | undefined {
   return `${request.protocol}://${request.host}${request.url}`;
 }
 
-export type { DomainsResolver, DomainsResolverContext } from '@auth0/auth0-api-js';
+export type {
+  DomainsResolver,
+  DomainsResolverContext,
+  OnBehalfOfTokenOptions,
+  OnBehalfOfTokenResult,
+} from '@auth0/auth0-api-js';
+export { getCurrentActor, getDelegationChain, MissingClientAuthError, TokenExchangeError } from '@auth0/auth0-api-js';

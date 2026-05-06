@@ -6,6 +6,7 @@
 - [Multiple Custom Domains (MCD)](#multiple-custom-domains-mcd)
 - [Discovery Cache Configuration](#discovery-cache-configuration)
 - [The `ApiClient` Instance](#the-apiclient-instance)
+- [On-Behalf-Of Token Exchange](#on-behalf-of-token-exchange)
 - [Protecting API Routes](#protecting-api-routes)
 
 ## Configuration
@@ -218,6 +219,192 @@ fastify.register(fastifyAuth0, {
 Once the plugin is registered, an instance of the Auth0 `ApiClient` is available via `fastify.auth0Client`. This instance can be used to call any of the methods available on the `ApiClient`, such as `verifyAccessToken()` and `getAccessTokenForConnection()`.
 
 For the complete list of available methods, please refer to the [@auth0/auth0-api-js SDK documentation](https://github.com/auth0/auth0-auth-js/blob/main/packages/auth0-api-js/README.md).
+
+## On-Behalf-Of Token Exchange
+
+Use `fastify.auth0Client.getTokenOnBehalfOf()` when your Fastify API receives an Auth0 access token for itself and needs to exchange it for another Auth0 access token targeting a downstream API, while preserving the same user identity. This is especially useful for MCP servers and other intermediary APIs that need to call downstream APIs on behalf of the user.
+
+The flow has three steps:
+
+1. **Verify** the incoming access token so your API rejects invalid or mis-targeted tokens before exchanging.
+2. **Exchange** the verified token for a new access token scoped to the downstream API.
+3. **Call** the downstream API using the exchanged token.
+
+`getTokenOnBehalfOf()` requires a confidential client. The plugin must be registered with `clientId` and at least one of `clientSecret` or `clientAssertionSigningKey`. Calling it without client credentials throws `MissingClientAuthError`.
+
+### Plugin Registration
+
+When using OBO, configure the plugin with credentials in addition to `domain` and `audience`:
+
+```ts
+import fastifyAuth0Api from '@auth0/auth0-fastify-api';
+
+const fastify = Fastify({ logger: true });
+
+fastify.register(fastifyAuth0Api, {
+  domain: '<AUTH0_DOMAIN>',          // your MCP server's Auth0 tenant domain
+  audience: '<AUTH0_AUDIENCE>',      // your MCP server's API audience
+  clientId: '<AUTH0_CLIENT_ID>',     // required for OBO
+  clientSecret: '<AUTH0_CLIENT_SECRET>', // required for OBO (or use clientAssertionSigningKey)
+});
+```
+
+### Performing the Exchange
+
+Inside a route handler, verify the incoming token first, then exchange it for a downstream audience:
+
+```ts
+import type { FastifyRequest, FastifyReply } from 'fastify';
+import { getCurrentActor, getDelegationChain } from '@auth0/auth0-fastify-api';
+
+fastify.register(() => {
+  fastify.post(
+    '/schedule-meeting',
+    {
+      preHandler: fastify.requireAuth(),
+    },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      // request.user is already verified by requireAuth()
+      const incomingAccessToken = request.getToken()!;
+
+      // Exchange the verified token for a token scoped to the downstream Calendar API.
+      // Pass the raw token — do not include the `Bearer ` prefix.
+      const obo = await fastify.auth0Client!.getTokenOnBehalfOf(incomingAccessToken, {
+        audience: 'https://calendar-api.example.com',
+        scope: 'calendar:read calendar:write',
+      });
+
+      // Call the downstream API with the exchanged token.
+      const response = await fetch('https://calendar-api.example.com/meetings', {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${obo.accessToken}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(request.body),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Calendar API request failed with ${response.status}`);
+      }
+
+      return { user: request.user.sub, meeting: await response.json() };
+    }
+  );
+});
+```
+
+> [!TIP]
+> **Production notes:**
+> - `requireAuth()` in the `preHandler` verifies the incoming token before your handler runs. Always protect routes with `requireAuth()` before calling `getTokenOnBehalfOf()`.
+> - `request.getToken()` returns the raw JWT from the `Authorization` header, without the `Bearer ` prefix. Pass this directly to `getTokenOnBehalfOf()`.
+> - The downstream `audience` must match an API identifier configured in your Auth0 tenant, and your client must be authorized to access it.
+> - `getTokenOnBehalfOf()` only returns access-token-oriented fields. It does not expose `idToken` or `refreshToken`.
+> - OBO requires a **confidential client**. Calling it without client credentials throws `MissingClientAuthError`.
+
+> [!NOTE]
+> **DPoP:** `getTokenOnBehalfOf()` forwards the incoming access token as the
+> [RFC 8693](https://datatracker.ietf.org/doc/html/rfc8693#section-2.1) `subject_token`
+> and relies on Auth0 to handle any DPoP-specific behavior for that token.
+
+### `getTokenOnBehalfOf()` Return Value
+
+On success, the method returns an `OnBehalfOfTokenResult` object containing:
+
+- `accessToken`: The exchanged access token issued for the downstream API.
+- `expiresAt`: The access token expiration time, represented in seconds since the Unix epoch.
+- `scope`: The scope granted for the exchanged token, if returned.
+- `tokenType`: The returned token type, if returned.
+- `issuedTokenType`: The returned RFC 8693 issued token type, if returned.
+
+### Error Handling
+
+Two error types cover the failure scenarios you will encounter:
+
+- `MissingClientAuthError`: Thrown when `clientId` or client credentials (`clientSecret` or `clientAssertionSigningKey`) are not configured on the plugin. This is a configuration error and will not be resolved at request time.
+- `TokenExchangeError`: Thrown when Auth0 rejects the exchange. The error preserves the OAuth error code and description from Auth0 (for example, `invalid_target` when the client is not authorized to access the downstream API).
+
+Both are exported from `@auth0/auth0-fastify-api`:
+
+```ts
+import fastifyAuth0Api, { MissingClientAuthError, TokenExchangeError } from '@auth0/auth0-fastify-api';
+
+try {
+  const obo = await fastify.auth0Client!.getTokenOnBehalfOf(incomingAccessToken, {
+    audience: 'https://calendar-api.example.com',
+  });
+} catch (err) {
+  if (err instanceof MissingClientAuthError) {
+    // Plugin is not configured with client credentials — fix the registration options.
+    throw err;
+  }
+  if (err instanceof TokenExchangeError) {
+    // Auth0 rejected the exchange. err.message contains the error_description from Auth0.
+    reply.code(502).send({ error: 'upstream_exchange_failed', detail: err.message });
+    return;
+  }
+  throw err;
+}
+```
+
+### Verifying an Exchanged Token on the Downstream API
+
+When the downstream API (for example, the Calendar API in the examples above) receives the exchanged token, it should verify the token, confirm that the current actor is an expected caller, and optionally record the delegation chain for audit logging.
+
+The exchanged token contains an `act` claim that identifies the actor that performed the exchange:
+
+```json
+{
+  "sub": "auth0|user123",
+  "aud": "https://calendar-api.example.com",
+  "azp": "<AUTH0_CLIENT_ID>",
+  "act": {
+    "sub": "<AUTH0_CLIENT_ID>"
+  }
+}
+```
+
+On the Calendar API (also a Fastify app using this plugin):
+
+```ts
+import fastifyAuth0Api, { getCurrentActor, getDelegationChain } from '@auth0/auth0-fastify-api';
+
+const calendarApi = Fastify({ logger: true });
+
+calendarApi.register(fastifyAuth0Api, {
+  domain: '<AUTH0_DOMAIN>',
+  audience: 'https://calendar-api.example.com',
+});
+
+const ALLOWED_ACTORS = ['<MCP_SERVER_CLIENT_ID>'];
+
+calendarApi.register(() => {
+  calendarApi.get(
+    '/meetings',
+    {
+      preHandler: calendarApi.requireAuth(),
+    },
+    async (request: FastifyRequest) => {
+      // Use only the top-level act.sub for authorization decisions (RFC 8693 §4.1).
+      const currentActor = getCurrentActor(request.user);
+      if (!currentActor || !ALLOWED_ACTORS.includes(currentActor)) {
+        throw { statusCode: 403, message: 'Actor not authorized' };
+      }
+
+      // Use the full delegation chain for logging or audit only — never for authorization.
+      const delegationChain = getDelegationChain(request.user);
+      request.log.info({ user: request.user.sub, currentActor, delegationChain }, 'delegated_request');
+
+      return { meetings: [] };
+    }
+  );
+});
+```
+
+> [!IMPORTANT]
+> Only the outermost `act.sub`, returned by `getCurrentActor()`, should be used for authorization
+> decisions. Nested `act` values represent prior actors in the delegation chain and are informational
+> only, per [RFC 8693 §4.1](https://datatracker.ietf.org/doc/html/rfc8693#section-4.1).
 
 ## Protecting API Routes
 
