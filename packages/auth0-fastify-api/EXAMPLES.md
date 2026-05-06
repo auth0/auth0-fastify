@@ -230,7 +230,7 @@ The flow has three steps:
 2. **Exchange** the verified token for a new access token scoped to the downstream API.
 3. **Call** the downstream API using the exchanged token.
 
-`getTokenOnBehalfOf()` requires a confidential client. The plugin must be registered with `clientId` and at least one of `clientSecret`, a private key, or mTLS credentials. Calling it without client credentials throws `MissingClientAuthError`.
+`getTokenOnBehalfOf()` requires a confidential client. The plugin must be registered with `clientId` and at least one of `clientSecret` or `clientAssertionSigningKey`. Calling it without client credentials throws `MissingClientAuthError`.
 
 ### Plugin Registration
 
@@ -245,7 +245,7 @@ fastify.register(fastifyAuth0Api, {
   domain: '<AUTH0_DOMAIN>',          // your MCP server's Auth0 tenant domain
   audience: '<AUTH0_AUDIENCE>',      // your MCP server's API audience
   clientId: '<AUTH0_CLIENT_ID>',     // required for OBO
-  clientSecret: '<AUTH0_CLIENT_SECRET>', // required for OBO (or use privateKey / mTLS)
+  clientSecret: '<AUTH0_CLIENT_SECRET>', // required for OBO (or use clientAssertionSigningKey)
 });
 ```
 
@@ -321,7 +321,7 @@ On success, the method returns an `OnBehalfOfTokenResult` object containing:
 
 Two error types cover the failure scenarios you will encounter:
 
-- `MissingClientAuthError`: Thrown when `clientId` or client credentials (`clientSecret`, private key, or mTLS) are not configured on the plugin. This is a configuration error and will not be resolved at request time.
+- `MissingClientAuthError`: Thrown when `clientId` or client credentials (`clientSecret` or `clientAssertionSigningKey`) are not configured on the plugin. This is a configuration error and will not be resolved at request time.
 - `TokenExchangeError`: Thrown when Auth0 rejects the exchange. The error preserves the OAuth error code and description from Auth0 (for example, `invalid_target` when the client is not authorized to access the downstream API).
 
 Both are exported from `@auth0/auth0-fastify-api`:

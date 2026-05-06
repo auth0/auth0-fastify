@@ -95,7 +95,7 @@ fastify.register(() => {
 
 Use `fastify.auth0Client.getTokenOnBehalfOf()` when your Fastify API needs to call a downstream API on behalf of the same user, such as in an MCP server. The method exchanges the incoming access token for a new one scoped to the downstream API while preserving the user's identity.
 
-`getTokenOnBehalfOf()` requires a confidential client. Register the plugin with `clientId` and `clientSecret` (or a private key / mTLS credentials).
+`getTokenOnBehalfOf()` requires a confidential client. Register the plugin with `clientId` and `clientSecret` (or `clientAssertionSigningKey` for client assertion authentication).
 
 ```ts
 import fastifyAuth0Api from '@auth0/auth0-fastify-api';
