@@ -335,6 +335,14 @@ fastify.register(fastifyAuth0Api, {
 });
 ```
 
+### Hostname Resolution (`request.host` and `request.protocol`)
+
+This SDK uses `request.protocol` and `request.host` to construct the URL used for validating the DPoP proof's `htu` (HTTP URI) claim. If your application is behind a reverse proxy (e.g., Nginx, Cloudflare), you must enable proxy trust:
+
+```ts
+const fastify = Fastify({ trustProxy: true });
+```
+
 > [!IMPORTANT]
 > The only supported DPoP proof algorithm is **ES256**. The SDK rejects proofs signed with other algorithms.
 
