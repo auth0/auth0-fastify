@@ -1,6 +1,6 @@
 # Change Log
 
-## [auth0-fastify-api-v1.3.0](https://github.com/auth0/auth0-fastify/tree/auth0-fastify-api-v1.3.0) (2026-05-18)
+## [v1.3.0](https://github.com/auth0/auth0-fastify/tree/auth0-fastify-api-v1.3.0) (2026-05-18)
 [Full Changelog](https://github.com/auth0/auth0-fastify/compare/auth0-fastify-api-v1.2.0...auth0-fastify-api-v1.3.0)
 
 **Added**
