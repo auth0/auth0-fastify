@@ -3,6 +3,7 @@ dist
 coverage
 .turbo
 .env
+package-lock.json
 
 #temporary
 docs
