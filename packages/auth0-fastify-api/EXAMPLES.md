@@ -5,6 +5,7 @@
   - [Configuring a `customFetch` Implementation](#configuring-a-customfetch-implementation)
 - [Multiple Custom Domains (MCD)](#multiple-custom-domains-mcd)
 - [Discovery Cache Configuration](#discovery-cache-configuration)
+- [DPoP (Demonstration of Proof-of-Possession)](#dpop-demonstration-of-proof-of-possession)
 - [The `ApiClient` Instance](#the-apiclient-instance)
 - [On-Behalf-Of Token Exchange](#on-behalf-of-token-exchange)
 - [Protecting API Routes](#protecting-api-routes)
@@ -213,6 +214,140 @@ fastify.register(fastifyAuth0, {
   discoveryCache: { ttl: 600, maxEntries: 100 },
 });
 ```
+
+## DPoP (Demonstration of Proof-of-Possession)
+
+[DPoP (RFC 9449)](https://datatracker.ietf.org/doc/html/rfc9449) is a mechanism that binds access tokens to a specific client key pair. Even if a DPoP-bound token is stolen, it cannot be used without the corresponding private key, significantly reducing the impact of token theft.
+
+### How DPoP Works
+
+1. The client generates an asymmetric key pair (ES256).
+2. When requesting a token from Auth0, the client presents a DPoP proof JWT signed with its private key.
+3. Auth0 issues an access token bound to that key via the `cnf.jkt` (confirmation JSON Key Thumbprint) claim.
+4. When calling your API, the client sends:
+   - `Authorization: DPoP <access_token>` (not `Bearer`)
+   - `DPoP: <proof_jwt>` header containing a proof JWT tied to the HTTP method and URL
+
+The SDK automatically extracts the DPoP proof, validates the binding, and verifies the proof against the request.
+
+### Configuration
+
+Configure DPoP behavior using the `dpop` option:
+
+```ts
+import fastifyAuth0Api, { type DPoPOptions } from '@auth0/auth0-fastify-api';
+
+const fastify = Fastify({ logger: true });
+
+fastify.register(fastifyAuth0Api, {
+  domain: '<AUTH0_DOMAIN>',
+  audience: '<AUTH0_AUDIENCE>',
+  dpop: {
+    mode: 'required',    // 'allowed' | 'required' | 'disabled'
+    iatOffset: 300,      // max age of proof in seconds (default: 300)
+    iatLeeway: 30,       // future clock skew tolerance in seconds (default: 30)
+  },
+});
+```
+
+### DPoP Modes
+
+| Mode | Behavior |
+|------|----------|
+| `allowed` (default) | Accepts both Bearer tokens and DPoP-bound tokens. When a DPoP proof is present or the token contains a `cnf.jkt` claim, DPoP validation is performed. |
+| `required` | Only DPoP-bound tokens are accepted. Bearer tokens are rejected with a `DPoP` challenge in `WWW-Authenticate`. |
+| `disabled` | DPoP is completely ignored. Only Bearer tokens are accepted. |
+
+### Route Protection with DPoP
+
+No changes are needed in your route handlers. The `requireAuth()` preHandler automatically handles DPoP validation:
+
+```ts
+fastify.register(() => {
+  fastify.get(
+    '/protected-resource',
+    {
+      preHandler: fastify.requireAuth({ scopes: 'read:data' }),
+    },
+    async (request: FastifyRequest) => {
+      // request.user contains the verified token claims
+      // Works identically for both Bearer and DPoP-bound tokens
+      return { data: request.user.sub };
+    }
+  );
+});
+```
+
+### Error Handling
+
+DPoP introduces additional error types. All are exported from `@auth0/auth0-fastify-api`:
+
+```ts
+import fastifyAuth0Api, {
+  InvalidDpopProofError,
+  InvalidRequestError,
+  VerifyAccessTokenError,
+} from '@auth0/auth0-fastify-api';
+```
+
+| Error Class | HTTP Status | When |
+|-------------|-------------|------|
+| `InvalidDpopProofError` | 400 | The DPoP proof JWT fails validation (wrong method, URL, expired, bad signature, etc.) |
+| `InvalidRequestError` | 400 | Missing DPoP proof when required, invalid authentication scheme, or scheme mismatch |
+| `VerifyAccessTokenError` | 401 | Token verification fails (expired, bad signature, missing `cnf.jkt` for DPoP scheme, etc.) |
+
+The SDK returns RFC-compliant `WWW-Authenticate` response headers with appropriate challenges:
+
+- **Mode `allowed`**: `Bearer realm="api", ..., DPoP algs="ES256"`
+- **Mode `required`**: `DPoP algs="ES256", error="...", error_description="..."`
+- **Mode `disabled`**: `Bearer realm="api", error="...", error_description="..."`
+
+### DPoP with Multiple Custom Domains
+
+DPoP works seamlessly with the Multiple Custom Domains (MCD) feature. The `httpUrl` used for DPoP proof validation is derived from the same request URL used for domain resolution:
+
+```ts
+fastify.register(fastifyAuth0Api, {
+  audience: '<AUTH0_AUDIENCE>',
+  domains: ['brand1.auth.example.com', 'brand2.auth.example.com'],
+  dpop: { mode: 'required' },
+});
+```
+
+### Timing Configuration
+
+The `iatOffset` and `iatLeeway` options control how the SDK validates the DPoP proof's `iat` (issued-at) claim:
+
+- **`iatOffset`** (default: 300 seconds): Maximum age of a DPoP proof. A proof issued more than `iatOffset` seconds ago is rejected.
+- **`iatLeeway`** (default: 30 seconds): Allowed future clock skew. A proof with `iat` up to `iatLeeway` seconds in the future is accepted.
+
+The acceptable `iat` window is: `[now - iatOffset, now + iatLeeway]`.
+
+```ts
+fastify.register(fastifyAuth0Api, {
+  domain: '<AUTH0_DOMAIN>',
+  audience: '<AUTH0_AUDIENCE>',
+  dpop: {
+    mode: 'allowed',
+    iatOffset: 600,  // accept proofs up to 10 minutes old
+    iatLeeway: 60,   // allow up to 60 seconds of future clock skew
+  },
+});
+```
+
+### Hostname Resolution (`request.host` and `request.protocol`)
+
+This SDK uses `request.protocol` and `request.host` to construct the URL used for validating the DPoP proof's `htu` (HTTP URI) claim. If your application is behind a reverse proxy (e.g., Nginx, Cloudflare), you must enable proxy trust:
+
+```ts
+const fastify = Fastify({ trustProxy: true });
+```
+
+> [!IMPORTANT]
+> The only supported DPoP proof algorithm is **ES256**. The SDK rejects proofs signed with other algorithms.
+
+> [!NOTE]
+> When `dpop.mode` is not set, it defaults to `'allowed'`, meaning your existing Bearer-token clients continue to work without any changes while DPoP-capable clients can opt in.
 
 ## The `ApiClient` Instance
 

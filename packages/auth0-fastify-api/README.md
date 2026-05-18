@@ -91,6 +91,34 @@ fastify.register(() => {
 > The above is to protect API routes by the means of a bearer token, and not server-side rendering routes using a session. 
 
 
+### DPoP (Demonstration of Proof-of-Possession)
+
+DPoP binds access tokens to a specific client's key pair, preventing stolen tokens from being replayed by attackers. The SDK supports DPoP with three modes:
+
+- **`allowed`** (default): accepts both Bearer and DPoP-bound tokens.
+- **`required`**: only DPoP-bound tokens are accepted; Bearer tokens are rejected.
+- **`disabled`**: DPoP is ignored; Bearer-only behavior.
+
+```ts
+import fastifyAuth0Api from '@auth0/auth0-fastify-api';
+
+const fastify = Fastify({ logger: true });
+
+fastify.register(fastifyAuth0Api, {
+  domain: '<AUTH0_DOMAIN>',
+  audience: '<AUTH0_AUDIENCE>',
+  dpop: { mode: 'required' },
+});
+```
+
+When DPoP is enabled, clients send:
+1. An `Authorization: DPoP <access_token>` header (instead of `Bearer`).
+2. A `DPoP` header containing a proof JWT tied to the request method and URL.
+
+The SDK automatically extracts the DPoP proof from the request, validates it against the access token's `cnf.jkt` claim, and verifies that the proof matches the current HTTP method and URL.
+
+For the full configuration reference and error handling details, see the [DPoP section in EXAMPLES.md](https://github.com/auth0/auth0-fastify/blob/main/packages/auth0-fastify-api/EXAMPLES.md#dpop-demonstration-of-proof-of-possession).
+
 ### On-Behalf-Of Token Exchange
 
 Use `fastify.auth0Client.getTokenOnBehalfOf()` when your Fastify API needs to call a downstream API on behalf of the same user, such as in an MCP server. The method exchanges the incoming access token for a new one scoped to the downstream API while preserving the user's identity.
