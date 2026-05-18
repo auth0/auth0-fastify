@@ -459,6 +459,65 @@ describe('DPoP mode: disabled', () => {
 });
 
 // ---------------------------------------------------------------------------
+// DPoP URL construction (trustProxy behavior)
+// ---------------------------------------------------------------------------
+
+describe('DPoP URL construction', () => {
+  test('should reject DPoP proof when trustProxy is disabled and proof htu uses forwarded host', async () => {
+    const fastify = Fastify({ trustProxy: false });
+    fastify.register(fastifyAuth0Api, { domain, audience });
+
+    fastify.register(() => {
+      fastify.get('/test', { preHandler: fastify.requireAuth() }, async () => 'OK');
+    });
+
+    const accessToken = await signAccessToken({ cnfJkt: ecThumbprint });
+    // Proof was created for proxy host, but trustProxy is disabled so SDK sees localhost
+    const dpopProof = await createDpopProof(accessToken, 'GET', 'https://proxy.example.com/test');
+
+    const res = await fastify.inject({
+      method: 'GET',
+      url: '/test',
+      headers: {
+        authorization: `DPoP ${accessToken}`,
+        dpop: dpopProof,
+        'x-forwarded-host': 'proxy.example.com',
+        'x-forwarded-proto': 'https',
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('invalid_dpop_proof');
+  });
+
+  test('should accept DPoP proof when trustProxy is enabled and proof htu uses forwarded host', async () => {
+    const fastify = Fastify({ trustProxy: true });
+    fastify.register(fastifyAuth0Api, { domain, audience });
+
+    fastify.register(() => {
+      fastify.get('/test', { preHandler: fastify.requireAuth() }, async () => 'OK');
+    });
+
+    const accessToken = await signAccessToken({ cnfJkt: ecThumbprint });
+    const dpopProof = await createDpopProof(accessToken, 'GET', 'https://proxy.example.com/test');
+
+    const res = await fastify.inject({
+      method: 'GET',
+      url: '/test',
+      headers: {
+        authorization: `DPoP ${accessToken}`,
+        dpop: dpopProof,
+        'x-forwarded-host': 'proxy.example.com',
+        'x-forwarded-proto': 'https',
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toBe('OK');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // DPoP proof validation details
 // ---------------------------------------------------------------------------
 

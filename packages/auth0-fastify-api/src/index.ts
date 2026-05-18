@@ -213,6 +213,15 @@ async function auth0FastifyApi(fastify: FastifyInstance, options: Auth0FastifyAp
         const httpUrl = buildRequestUrl(request);
         const dpopProof = extractDpopProof(request);
 
+        if (dpopProof && !httpUrl) {
+          return replyWithError(
+            reply,
+            400,
+            'invalid_request',
+            'Unable to construct request URL for DPoP validation. Ensure trustProxy is configured if behind a proxy.'
+          );
+        }
+
         const verifyOptions: VerifyAccessTokenOptions = dpopProof
           ? {
               accessToken,
