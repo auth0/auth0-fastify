@@ -1,5 +1,13 @@
 # Change Log
 
+## [auth0-fastify-api-v1.3.0](https://github.com/auth0/auth0-fastify/tree/auth0-fastify-api-v1.3.0) (2026-05-18)
+[Full Changelog](https://github.com/auth0/auth0-fastify/compare/auth0-fastify-api-v1.2.0...auth0-fastify-api-v1.3.0)
+
+**Added**
+- feat(auth0-fastify-api): Add DPoP support on auth0-fastify-api [\#60](https://github.com/auth0/auth0-fastify/pull/60) ([@nandan-bhat](https://github.com/nandan-bhat))
+- feat(auth0-fastify-api): add on-behalf-of-token-exchange support on auth0-fastify-api [\#58](https://github.com/auth0/auth0-fastify/pull/58) ([@nandan-bhat](https://github.com/nandan-bhat))
+
+
 ## [v1.2.0](https://github.com/auth0/auth0-fastify/releases/tag/auth0-fastify-api-v1.2.0) (2026-04-09)
 [Full Changelog](https://github.com/auth0/auth0-fastify/compare/auth0-fastify-api-v1.1.0...auth0-fastify-api-v1.2.0)
 
