@@ -193,6 +193,26 @@ describe('DPoP mode: allowed (default)', () => {
     expect(res.json().error).toBe('invalid_dpop_proof');
   });
 
+  test('should reject DPoP scheme without proof in allowed mode', async () => {
+    const fastify = Fastify();
+    fastify.register(fastifyAuth0Api, { domain, audience });
+
+    fastify.register(() => {
+      fastify.get('/test', { preHandler: fastify.requireAuth() }, async () => 'OK');
+    });
+
+    const accessToken = await signAccessToken({ cnfJkt: ecThumbprint });
+
+    const res = await fastify.inject({
+      method: 'GET',
+      url: '/test',
+      headers: { authorization: `DPoP ${accessToken}` },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('invalid_request');
+  });
+
   test('should reject DPoP scheme when token has no cnf.jkt', async () => {
     const fastify = Fastify();
     fastify.register(fastifyAuth0Api, { domain, audience });
