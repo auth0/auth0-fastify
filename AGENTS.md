@@ -58,6 +58,9 @@ keep changes compatible with both.
 - **Security defaults matter.** RS256 is the default for access-token
   validation and HS* algorithms are rejected; encrypted session cookies require
   a `sessionSecret`. Do not weaken these defaults.
+- **Secrets via environment variables.** Values such as `clientSecret` and
+  `sessionSecret` must come from environment variables (as the examples do),
+  never hard-coded in source.
 - **Reverse-proxy awareness.** `inferAppBaseUrlFromRequest` in
   `packages/auth0-fastify/src/index.ts` reads `x-forwarded-host` /
   `x-forwarded-proto`. Only rely on those behind a trusted proxy
