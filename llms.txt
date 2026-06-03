@@ -5,9 +5,9 @@
 ## Packages
 
 - [@auth0/auth0-fastify README](./packages/auth0-fastify/README.md): Web authentication SDK — registers a Fastify plugin, mounts login/logout/callback routes, manages encrypted session cookies, protects routes, and supports account linking.
-- [@auth0/auth0-fastify README — Examples](./packages/auth0-fastify/EXAMPLES.md): Advanced web patterns — account linking (connect/unconnect), custom routes, interactive login without mounted routes, backchannel logout, pushed authorization requests, and external session stores.
+- [@auth0/auth0-fastify — Examples](./packages/auth0-fastify/EXAMPLES.md): Advanced web patterns — account linking (connect/unconnect), custom routes, interactive login without mounted routes, backchannel logout, pushed authorization requests, and external session stores.
 - [@auth0/auth0-fastify-api README](./packages/auth0-fastify-api/README.md): API protection SDK — validates bearer access tokens (RS256, rejects HS*), enforces audience/scopes, and supports DPoP.
-- [@auth0/auth0-fastify-api README — Examples](./packages/auth0-fastify-api/EXAMPLES.md): Advanced API patterns — DPoP modes, On-Behalf-Of token exchange, and multi-domain configuration.
+- [@auth0/auth0-fastify-api — Examples](./packages/auth0-fastify-api/EXAMPLES.md): Advanced API patterns — DPoP modes, On-Behalf-Of token exchange, and multi-domain configuration.
 
 ## Getting started
 
