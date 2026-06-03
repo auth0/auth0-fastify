@@ -1,70 +1,75 @@
 # AGENTS.md
 
-Onboarding for AI agents integrating Auth0 into a Fastify application using the
-SDKs in this monorepo. For working *on* this repo (build/test/conventions), see
-[CLAUDE.md](./CLAUDE.md).
+Guidance for AI coding agents working in this repository.
 
-## Pick the right package
+## What this is
 
-| Your app is… | Use | Install |
-|--------------|-----|---------|
-| A server-rendered Fastify **web app** that logs users in and keeps a session | `@auth0/auth0-fastify` | `npm i @auth0/auth0-fastify` |
-| A Fastify **API** that validates access tokens from callers | `@auth0/auth0-fastify-api` | `npm i @auth0/auth0-fastify-api` |
-| Both (web app + separate API) | both packages | install both |
+A monorepo containing two published SDKs for adding Auth0 to Fastify (v5+)
+applications on JavaScript runtimes. Both packages are TypeScript and require
+Node.js 20 LTS or newer.
 
-Requirements: Node.js 20 LTS+ and Fastify v5+.
+| Package | Path | Purpose |
+|---------|------|---------|
+| `@auth0/auth0-fastify` | `packages/auth0-fastify` | User authentication for server-rendered web apps: registers a Fastify plugin, mounts login/logout/callback routes, manages encrypted session cookies, protects routes, supports account linking. Built on `@auth0/auth0-server-js`. |
+| `@auth0/auth0-fastify-api` | `packages/auth0-fastify-api` | API protection: validates bearer access tokens (RS256; HS* rejected), enforces audience/scopes, supports DPoP and On-Behalf-Of token exchange. Built on `@auth0/auth0-api-js`. |
 
-## Web app — `@auth0/auth0-fastify`
+Runnable examples live in `examples/example-fastify-web` and
+`examples/example-fastify-api`.
 
-Registers a Fastify plugin that mounts login, logout, and callback routes, and
-stores an encrypted session cookie. Minimum configuration:
+## Layout
 
-- `domain` — your Auth0 tenant domain.
-- `clientId` / `clientSecret` — from your Auth0 Regular Web Application.
-- `appBaseUrl` — the public base URL of your app.
-- `sessionSecret` — secret used to encrypt the session cookie.
+```
+packages/auth0-fastify/        # web auth SDK (source in src/, tests are *.spec.ts)
+packages/auth0-fastify-api/    # API protection SDK
+examples/                      # runnable example apps (npm workspaces)
+.github/workflows/             # CI: build, test (Node 20 & 22), Snyk SCA
+```
 
-After registering, protect routes and read the authenticated user from the
-session. Account linking, custom routes, interactive login without mounted
-routes, backchannel logout, pushed authorization requests, and external session
-stores are covered in
-[packages/auth0-fastify/EXAMPLES.md](./packages/auth0-fastify/EXAMPLES.md).
-Start from [packages/auth0-fastify/README.md](./packages/auth0-fastify/README.md).
+## Build, test, lint
 
-## API — `@auth0/auth0-fastify-api`
+This is an npm workspaces monorepo orchestrated with Turborepo. Run from the
+repo root:
 
-Registers a plugin that validates incoming bearer access tokens against your
-Auth0 tenant. Minimum configuration:
+```bash
+npm install            # install all workspace deps
+npm run build          # turbo run build (all packages)
+npm run test           # turbo run test (all packages)
+npm run lint           # turbo run lint
+npm run docs           # generate TypeDoc
+```
 
-- `domain` — your Auth0 tenant domain.
-- `audience` — the API identifier the token must be issued for.
+Target a single package with npm workspaces:
 
-Defaults to RS256 and rejects HS* algorithms. Enforce scopes per route, and use
-DPoP or On-Behalf-Of token exchange where needed — see
-[packages/auth0-fastify-api/EXAMPLES.md](./packages/auth0-fastify-api/EXAMPLES.md).
-Start from
-[packages/auth0-fastify-api/README.md](./packages/auth0-fastify-api/README.md).
+```bash
+npm run build -w @auth0/auth0-fastify
+npm run test:ci -w @auth0/auth0-fastify-api
+```
 
-## Guardrails when generating integration code
+Tests are colocated with source as `*.spec.ts`. CI runs on Node 20 and 22, so
+keep changes compatible with both.
 
-- **Secrets come from environment variables**, never hard-coded. All official
-  examples read `clientSecret` / `sessionSecret` from env.
-- **Behind a proxy/load balancer**, set `fastify.trustProxy` so the SDK derives
-  the correct base URL from `x-forwarded-*` headers; do not trust those headers
-  on a directly-exposed app.
-- **Do not lower security defaults** (RS256, encrypted sessions).
-- **Use Fastify v5 patterns** (await plugin registration); v4 syntax will not
-  work.
+## Conventions
 
-## Try the examples first
+- **TypeScript, Fastify v5+, Node 20+.** Do not introduce Fastify v4 patterns
+  (e.g. non-awaited plugin registration) — the SDKs require v5.
+- **Keep packages independent.** A change to the web package must not require a
+  change to the API package unless intentional; they ship separately and are
+  versioned independently.
+- **Security defaults matter.** RS256 is the default for access-token
+  validation and HS* algorithms are rejected; encrypted session cookies require
+  a `sessionSecret`. Do not weaken these defaults.
+- **Reverse-proxy awareness.** `inferAppBaseUrlFromRequest` in
+  `packages/auth0-fastify/src/index.ts` reads `x-forwarded-host` /
+  `x-forwarded-proto`. Only rely on those behind a trusted proxy
+  (`fastify.trustProxy`).
+- **Add tests** for behavior changes (`*.spec.ts` beside the source) and keep
+  `npm run lint` clean before considering work done.
+- **Conventional commits.** Match the existing history (`feat(scope):`,
+  `fix(scope):`, `chore(scope):`).
+- **Match existing style.** Follow the patterns already in each package rather
+  than introducing new abstractions.
 
-- Web: [examples/example-fastify-web](./examples/example-fastify-web/README.md)
-- API: [examples/example-fastify-api](./examples/example-fastify-api/README.md)
+## Where to look first
 
-From the repo root: `npm install && npm run build`, then follow the example's
-README.
-
-## Official quickstarts
-
-- Web: https://auth0.com/docs/quickstart/webapp/fastify
-- API: https://auth0.com/docs/quickstart/backend/fastify
+Read `README.md` (root), then the package `README.md` and `EXAMPLES.md` for the
+package you are touching. `llms.txt` is a structured index of the repo's docs.

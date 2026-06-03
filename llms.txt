@@ -17,8 +17,8 @@
 
 ## Development
 
-- [CLAUDE.md](./CLAUDE.md): Repository guide for coding agents — layout, build/test/lint commands, and conventions.
-- [AGENTS.md](./AGENTS.md): Agent onboarding — how to choose the right package and integrate it.
+- [AGENTS.md](./AGENTS.md): Guide for AI coding agents developing on this repo — layout, build/test/lint commands, and conventions.
+- [CLAUDE.md](./CLAUDE.md): Claude Code entry point; imports AGENTS.md (Claude Code does not read AGENTS.md automatically).
 
 ## Optional
 
