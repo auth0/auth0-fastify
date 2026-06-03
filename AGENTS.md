@@ -4,17 +4,16 @@ Guidance for AI coding agents working in this repository.
 
 ## What this is
 
-A monorepo containing two published SDKs for adding Auth0 to Fastify (v5+)
-applications on JavaScript runtimes. Both packages are TypeScript and require
-Node.js 20 LTS or newer.
+A monorepo containing two published TypeScript SDKs for adding Auth0 to Fastify
+(v5+) applications. Requires Node.js 20 LTS or newer.
 
-| Package | Path | Purpose |
-|---------|------|---------|
-| `@auth0/auth0-fastify` | `packages/auth0-fastify` | User authentication for server-rendered web apps: registers a Fastify plugin, mounts login/logout/callback routes, manages encrypted session cookies, protects routes, supports account linking. Built on `@auth0/auth0-server-js`. |
-| `@auth0/auth0-fastify-api` | `packages/auth0-fastify-api` | API protection: validates bearer access tokens (RS256; HS* rejected), enforces audience/scopes, supports DPoP and On-Behalf-Of token exchange. Built on `@auth0/auth0-api-js`. |
+| Package | Path | What it is | Built on |
+|---------|------|-----------|----------|
+| `@auth0/auth0-fastify` | `packages/auth0-fastify` | Web app authentication SDK | `@auth0/auth0-server-js` |
+| `@auth0/auth0-fastify-api` | `packages/auth0-fastify-api` | API protection SDK | `@auth0/auth0-api-js` |
 
-Runnable examples live in `examples/example-fastify-web` and
-`examples/example-fastify-api`.
+For what each SDK does and how to use it, see the package `README.md` and
+`EXAMPLES.md`.
 
 ## Layout
 
@@ -55,16 +54,9 @@ keep changes compatible with both.
 - **Keep packages independent.** A change to the web package must not require a
   change to the API package unless intentional; they ship separately and are
   versioned independently.
-- **Security defaults matter.** RS256 is the default for access-token
-  validation and HS* algorithms are rejected; encrypted session cookies require
-  a `sessionSecret`. Do not weaken these defaults.
-- **Secrets via environment variables.** Values such as `clientSecret` and
-  `sessionSecret` must come from environment variables (as the examples do),
-  never hard-coded in source.
-- **Reverse-proxy awareness.** `inferAppBaseUrlFromRequest` in
-  `packages/auth0-fastify/src/index.ts` reads `x-forwarded-host` /
-  `x-forwarded-proto`. Only rely on those behind a trusted proxy
-  (`fastify.trustProxy`).
+- **Don't weaken security defaults when editing.** Token validation defaults to
+  RS256 and rejects HS* algorithms; session cookies are encrypted and require a
+  `sessionSecret`. Preserve these when modifying the relevant code.
 - **Add tests** for behavior changes (`*.spec.ts` beside the source) and keep
   `npm run lint` clean before considering work done.
 - **Conventional commits.** Match the existing history (`feat(scope):`,
