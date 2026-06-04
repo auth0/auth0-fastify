@@ -1,0 +1,28 @@
+# Auth0 Fastify SDKs
+
+> Monorepo containing two SDKs for adding Auth0 to Fastify applications: `@auth0/auth0-fastify` for user authentication in server-rendered web apps (session cookies, login/logout, route protection, account linking), and `@auth0/auth0-fastify-api` for protecting Fastify APIs (JWT access-token validation, DPoP, On-Behalf-Of token exchange). Both are TypeScript, require Node.js 20 LTS or newer, and target Fastify v5+.
+
+## Packages
+
+- [@auth0/auth0-fastify README](./packages/auth0-fastify/README.md): Web authentication SDK — registers a Fastify plugin, mounts login/logout/callback routes, manages encrypted session cookies, protects routes, and supports account linking.
+- [@auth0/auth0-fastify — Examples](./packages/auth0-fastify/EXAMPLES.md): Advanced web patterns — account linking (connect/unconnect), custom routes, interactive login without mounted routes, backchannel logout, pushed authorization requests, and external session stores.
+- [@auth0/auth0-fastify-api README](./packages/auth0-fastify-api/README.md): API protection SDK — validates bearer access tokens (RS256, rejects HS*), enforces audience/scopes, and supports DPoP.
+- [@auth0/auth0-fastify-api — Examples](./packages/auth0-fastify-api/EXAMPLES.md): Advanced API patterns — DPoP modes, On-Behalf-Of token exchange, and multi-domain configuration.
+
+## Getting started
+
+- [Monorepo README](./README.md): Overview, package list, and how to install/build the workspace (`npm install`, `npm run build`) and run the examples.
+- [Fastify web app example](./examples/example-fastify-web/README.md): Runnable server-rendered web app using `@auth0/auth0-fastify`.
+- [Fastify API example](./examples/example-fastify-api/README.md): Runnable protected API using `@auth0/auth0-fastify-api`.
+
+## Development
+
+- [AGENTS.md](./AGENTS.md): Guide for AI coding agents developing on this repo — layout, build/test/lint commands, and conventions.
+- [CLAUDE.md](./CLAUDE.md): Claude Code entry point; imports AGENTS.md (Claude Code does not read AGENTS.md automatically).
+
+## Optional
+
+- [auth0-fastify CHANGELOG](./packages/auth0-fastify/CHANGELOG.md): Release history for the web package.
+- [auth0-fastify-api CHANGELOG](./packages/auth0-fastify-api/CHANGELOG.md): Release history for the API package.
+- [Auth0 Fastify web quickstart](https://auth0.com/docs/quickstart/webapp/fastify): Official guided quickstart for the web SDK.
+- [Auth0 Fastify backend quickstart](https://auth0.com/docs/quickstart/backend/fastify): Official guided quickstart for the API SDK.
