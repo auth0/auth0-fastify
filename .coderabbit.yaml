@@ -105,47 +105,42 @@ reviews:
     #   packages/auth0-fastify      — web app authentication SDK (built on @auth0/auth0-server-js)
     #   packages/auth0-fastify-api  — API protection SDK (built on @auth0/auth0-api-js)
     # Both target Fastify v5+ and Node 20+. Keep the packages independent: a change to one must not force a
-    # change to the other unless intentional.
-    - path: "packages/auth0-fastify/src/index.ts"
+    # change to the other unless intentional. Instructions are keyed to the package (not individual files) so
+    # they survive refactors that move or split modules.
+    - path: "packages/auth0-fastify/src/**/*.ts"
       instructions: |
-        Fastify v5 plugin definition (`fastify-plugin`) for the web auth SDK, plus the mounted OAuth/OIDC route
-        handlers (login, callback, logout, backchannel-logout, and the optional connect/unconnect account-linking
-        routes).
+        Web app authentication SDK: a Fastify v5 plugin (`fastify-plugin`) that mounts the OAuth/OIDC route
+        handlers (login, callback, logout, backchannel-logout, and optional connect/unconnect account-linking
+        routes) and bridges sessions/cookies to `@auth0/auth0-server-js`. Apply whichever of these apply to the
+        code under review:
         - Fastify v5: plugin registration must follow v5 patterns (await plugin registration; do not introduce
           v4-style non-awaited `register`). Flag anything that assumes v4 lifecycle behavior.
         - Secrets: `sessionSecret` and `clientSecret` must never be logged or returned. Sessions are encrypted
           cookies and require a `sessionSecret` — do not weaken or bypass this.
         - Redirects: every user-controlled `returnTo` (login, connect, unconnect query params) MUST pass through
-          `toSafeRedirect` before being used; redirect URIs must be built with `createRouteUrl`. Flag any raw
-          `reply.redirect` of a user-supplied target.
+          the safe-redirect helper (`toSafeRedirect`) before being used, and redirect URIs must be built with the
+          URL helper (`createRouteUrl`). Flag any raw `reply.redirect` of a user-supplied target. The safe-redirect
+          helper is the open-redirect guard for the whole web SDK: it must reject cross-origin targets (compare
+          `URL.origin`) and return undefined on parse failure — scrutinize changes to the origin comparison,
+          base-URL joining, or slash normalization for bypasses (e.g. `//evil.com`, backslashes, userinfo `@`
+          tricks, scheme-relative URLs).
         - appBaseUrl inference: when `appBaseUrl` is inferred from `Host`/`X-Forwarded-Host`/`X-Forwarded-Proto`
           headers, treat those headers as untrusted attacker-controlled input — verify the inferred origin can't
           be abused to defeat the same-origin redirect check.
-        - Backchannel logout: the `logout_token` must be validated by `handleBackchannelLogout` before any session
+        - Backchannel logout: the `logout_token` must be validated (`handleBackchannelLogout`) before any session
           is destroyed; missing/invalid tokens must return 400 and must not leak internal detail.
         - Route mounting: `mountRoutes` / `mountConnectRoutes` defaults must stay safe (connect routes default off).
+        - Cookies: the cookie/session adapter must honor secure defaults (`httpOnly`, `secure`, `sameSite`), must
+          not silently drop `CookieSerializeOptions`, and must use correct `maxAge` units (Fastify cookies expect
+          seconds). Missing store options must fail loudly via the typed error, not read/write the wrong
+          request/reply.
         - State/nonce/PKCE are handled by `@auth0/auth0-server-js`; verify this layer passes options through
           correctly and never disables those protections.
 
-    - path: "packages/auth0-fastify/src/utils.ts"
+    - path: "packages/auth0-fastify-api/src/**/*.ts"
       instructions: |
-        URL and redirect-safety helpers (`createRouteUrl`, `toSafeRedirect`). `toSafeRedirect` is the open-redirect
-        guard for the whole web SDK: it must reject cross-origin targets (compare `URL.origin`) and return
-        undefined on any parse failure. Scrutinize any change to the origin comparison, the base-URL joining, or
-        the leading/trailing-slash normalization for bypasses (e.g. `//evil.com`, backslashes, userinfo `@` tricks,
-        scheme-relative URLs).
-
-    - path: "packages/auth0-fastify/src/store/**/*.ts"
-      instructions: |
-        Cookie / session storage adapter (`FastifyCookieHandler`) bridging `@auth0/auth0-server-js` to
-        `@fastify/cookie`. Cookie set/get/delete must honor secure defaults (`httpOnly`, `secure`, `sameSite`) and
-        must not silently drop `CookieSerializeOptions`. Confirm `maxAge` units are correct (Fastify cookies expect
-        seconds) and that missing `storeOptions` fails loudly via the typed error rather than reading/writing the
-        wrong request/reply.
-
-    - path: "packages/auth0-fastify-api/src/index.ts"
-      instructions: |
-        API protection SDK: the `requireAuth` preHandler decorator and token/scope/DPoP validation.
+        API protection SDK: the `requireAuth` preHandler decorator and token/scope/DPoP validation. Apply
+        whichever of these apply to the code under review:
         - Fail closed: `requireAuth` must deny by default. Any path where a missing, malformed, expired, or
           unverified token still reaches the protected handler is a critical bug. Verify the handler returns
           (and does not fall through) on every failure branch.
