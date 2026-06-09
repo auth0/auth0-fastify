@@ -1,0 +1,179 @@
+# yaml-language-server: $schema=https://storage.googleapis.com/coderabbit_public_assets/schema.v2.json
+# CodeRabbit configuration for auth0-fastify
+# Reference: https://docs.coderabbit.ai/reference/configuration
+#
+# This file is organized into two parts so it can be shared across our TypeScript auth SDKs:
+#   [BASELINE]    — generic to ANY TS auth SDK. Keep identical across repos (or lift to org-level config).
+#   [FASTIFY]     — specific to this repo (Fastify v5 plugin, OAuth route handlers, requireAuth middleware, cookie store).
+# When reusing: copy the [BASELINE] entries verbatim into the sibling SDK and replace the [FASTIFY] block.
+
+language: en-US
+early_access: false
+
+reviews:
+  # ── [BASELINE] review behavior ──────────────────────────────────────────
+  profile: assertive
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - main
+    ignore_title_keywords:
+      - "release"
+      - "chore: release"
+
+  path_filters:
+    - "!**/dist/**"
+    - "!**/coverage/**"
+    - "!**/*.d.ts"
+    - "!**/node_modules/**"
+    - "!package-lock.json"
+
+  path_instructions:
+    # ── [BASELINE] generic TypeScript SDK rules ───────────────────────────
+    - path: "**/*.{ts,tsx}"
+      instructions: |
+        This is a published TypeScript SDK. Hold changes to library-grade standards.
+        - Type safety: flag `any`, unsafe non-null assertions (`!`), and unchecked type casts (`as`). Prefer
+          precise types, `unknown` with narrowing, and discriminated unions. Public API types must be explicit
+          and exported intentionally.
+        - Public API surface: treat any change to exported functions, classes, types, or the shape of options
+          objects as a potential breaking change. Call it out explicitly and check it matches the documented
+          API and the exports map in package.json.
+        - Errors: prefer the SDK's typed error classes over throwing strings or bare `Error`. Never swallow
+          errors silently; never leak secrets, tokens, or PII in error messages.
+        - Async: every promise must be awaited or explicitly handled. Flag floating promises and missing
+          try/catch around async I/O in request handlers and middleware.
+        - Comments and JSDoc: public exports should carry accurate JSDoc (TypeDoc is used). Flag stale or
+          misleading docs.
+
+    # ── [BASELINE] generic auth-SDK security rules ────────────────────────
+    # Path is repo-specific (packages/**/src) but the guidance applies to any TS auth SDK; adjust the
+    # glob to the sibling repo's source layout when reusing.
+    - path: "packages/**/src/**/*.ts"
+      instructions: |
+        SECURITY-CRITICAL authentication SDK code. Review with an attacker's mindset.
+        - Secrets & tokens: session secrets, client secrets, access/refresh/ID tokens, and authorization codes
+          must never be logged, returned in responses, or placed in error messages. Flag any such leak.
+        - Cookies: session/auth cookies must be `httpOnly`, `secure` (in production), and use an appropriate
+          `sameSite` value. Flag cookies that weaken these defaults.
+        - CSRF / state / nonce / PKCE: verify that `state` and `nonce` are generated, persisted, and validated
+          on the callback, and that PKCE verifiers are not reused or leaked. Flag any path that skips these
+          checks.
+        - Open redirects: `returnTo` / post-login / post-logout redirect targets must be validated against an
+          allowlist or constrained to the app's own origin. Flag unvalidated user-controlled redirect URLs.
+        - Token validation: ID/access token signature, `iss`, `aud`, `exp`, and `azp`/`nonce` claims must be
+          verified before trust. Flag any decode-without-verify (`jwt.decode` instead of verify) or skipped
+          claim checks.
+        - Timing-safe comparison: compare secrets, signatures, and tokens with constant-time comparison, never
+          `===` on raw secret strings.
+        - Input handling: never trust query, route params, request body, or headers without validation.
+          Watch for prototype-pollution vectors when merging untrusted objects into config or OAuth params.
+        - Auth bypass: auth/claim middleware must fail closed — deny by default and only allow on an explicit
+          positive check. Flag any path where a missing/invalid token still reaches the protected handler.
+
+    # ── [BASELINE] generic test guidance ──────────────────────────────────
+    - path: "**/*.{spec,test}.ts"
+      instructions: |
+        Tests should cover the failure/attack paths, not just the happy path — e.g. missing/expired/tampered
+        tokens, invalid state/nonce, and open-redirect attempts. Flag tests that assert on implementation
+        details rather than behavior, and over-broad mocking that hides real bugs.
+
+    # ── [BASELINE] generic example-app guidance ───────────────────────────
+    - path: "examples/**"
+      instructions: |
+        Example apps demonstrating SDK usage. They are not published, so apply lighter scrutiny on internal
+        structure, but they MUST model secure usage (no hardcoded secrets, secrets read from env, secure cookie
+        and redirect configuration) since users copy them.
+
+    # ── [BASELINE] generic CI/workflow guidance ───────────────────────────
+    - path: ".github/**/*.{yml,yaml}"
+      instructions: |
+        GitHub Actions. Pin third-party actions to a commit SHA, scope `permissions` to least privilege, avoid
+        `pull_request_target` with checkout of untrusted code, and never echo secrets into logs.
+
+    # ════════════════════════════════════════════════════════════════════
+    # [FASTIFY] repo-specific guidance — replace this block in sibling SDKs
+    # ════════════════════════════════════════════════════════════════════
+    # This is a Turborepo monorepo with two independently-versioned packages:
+    #   packages/auth0-fastify      — web app authentication SDK (built on @auth0/auth0-server-js)
+    #   packages/auth0-fastify-api  — API protection SDK (built on @auth0/auth0-api-js)
+    # Both target Fastify v5+ and Node 20+. Keep the packages independent: a change to one must not force a
+    # change to the other unless intentional.
+    - path: "packages/auth0-fastify/src/index.ts"
+      instructions: |
+        Fastify v5 plugin definition (`fastify-plugin`) for the web auth SDK, plus the mounted OAuth/OIDC route
+        handlers (login, callback, logout, backchannel-logout, and the optional connect/unconnect account-linking
+        routes).
+        - Fastify v5: plugin registration must follow v5 patterns (await plugin registration; do not introduce
+          v4-style non-awaited `register`). Flag anything that assumes v4 lifecycle behavior.
+        - Secrets: `sessionSecret` and `clientSecret` must never be logged or returned. Sessions are encrypted
+          cookies and require a `sessionSecret` — do not weaken or bypass this.
+        - Redirects: every user-controlled `returnTo` (login, connect, unconnect query params) MUST pass through
+          `toSafeRedirect` before being used; redirect URIs must be built with `createRouteUrl`. Flag any raw
+          `reply.redirect` of a user-supplied target.
+        - appBaseUrl inference: when `appBaseUrl` is inferred from `Host`/`X-Forwarded-Host`/`X-Forwarded-Proto`
+          headers, treat those headers as untrusted attacker-controlled input — verify the inferred origin can't
+          be abused to defeat the same-origin redirect check.
+        - Backchannel logout: the `logout_token` must be validated by `handleBackchannelLogout` before any session
+          is destroyed; missing/invalid tokens must return 400 and must not leak internal detail.
+        - Route mounting: `mountRoutes` / `mountConnectRoutes` defaults must stay safe (connect routes default off).
+        - State/nonce/PKCE are handled by `@auth0/auth0-server-js`; verify this layer passes options through
+          correctly and never disables those protections.
+
+    - path: "packages/auth0-fastify/src/utils.ts"
+      instructions: |
+        URL and redirect-safety helpers (`createRouteUrl`, `toSafeRedirect`). `toSafeRedirect` is the open-redirect
+        guard for the whole web SDK: it must reject cross-origin targets (compare `URL.origin`) and return
+        undefined on any parse failure. Scrutinize any change to the origin comparison, the base-URL joining, or
+        the leading/trailing-slash normalization for bypasses (e.g. `//evil.com`, backslashes, userinfo `@` tricks,
+        scheme-relative URLs).
+
+    - path: "packages/auth0-fastify/src/store/**/*.ts"
+      instructions: |
+        Cookie / session storage adapter (`FastifyCookieHandler`) bridging `@auth0/auth0-server-js` to
+        `@fastify/cookie`. Cookie set/get/delete must honor secure defaults (`httpOnly`, `secure`, `sameSite`) and
+        must not silently drop `CookieSerializeOptions`. Confirm `maxAge` units are correct (Fastify cookies expect
+        seconds) and that missing `storeOptions` fails loudly via the typed error rather than reading/writing the
+        wrong request/reply.
+
+    - path: "packages/auth0-fastify-api/src/index.ts"
+      instructions: |
+        API protection SDK: the `requireAuth` preHandler decorator and token/scope/DPoP validation.
+        - Fail closed: `requireAuth` must deny by default. Any path where a missing, malformed, expired, or
+          unverified token still reaches the protected handler is a critical bug. Verify the handler returns
+          (and does not fall through) on every failure branch.
+        - Token validation: access tokens must be cryptographically verified; algorithms default to `['RS256']`
+          and HS* must be rejected. Do not weaken this default.
+        - Scopes: insufficient scope must return 403 `insufficient_scope`; invalid/absent token must return 401
+          `invalid_token`. Verify scope parsing handles both string and array `scope` claim formats.
+        - DPoP: respect the configured mode (`allowed` default / `required` / `disabled`). In `required` mode a
+          plain Bearer token must be rejected. Confirm the `WWW-Authenticate` challenge header is set correctly
+          and that header values are properly escaped.
+        - Token exposure: `request.user` and `getToken()` must not lead to tokens being logged or serialized into
+          responses. Flag any such leak.
+
+  # ── [BASELINE] tools ──────────────────────────────────────────────────
+  tools:
+    languagetool:
+      enabled: true
+    eslint:
+      enabled: true
+    actionlint:
+      enabled: true
+    gitleaks:
+      enabled: true
+    semgrep:
+      enabled: true
+    markdownlint:
+      enabled: true
+
+# ── [BASELINE] chat ─────────────────────────────────────────────────────
+chat:
+  auto_reply: true
