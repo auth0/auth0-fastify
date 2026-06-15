@@ -1118,3 +1118,263 @@ test('auth/unconnect/callback uses custom route when provided', async () => {
   expect(url.pathname).toBe('/');
   expect(url.searchParams.size).toBe(0);
 });
+
+test('loginWithCustomTokenExchange persists session and returns user as authenticated', async () => {
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    domain: domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    appBaseUrl: 'http://localhost:3000',
+    sessionSecret: '<secret>',
+  });
+
+  fastify.post('/test/login-cte', async (request, reply) => {
+    await fastify.auth0Client!.loginWithCustomTokenExchange(
+      {
+        subjectToken: 'external-token',
+        subjectTokenType: 'urn:acme:legacy-token',
+      },
+      { request, reply }
+    );
+    return reply.send({ ok: true });
+  });
+
+  fastify.get('/test/session', async (request, reply) => {
+    const session = await fastify.auth0Client!.getSession({ request, reply });
+    return reply.send({ isAuthenticated: !!session?.user });
+  });
+
+  await fastify.ready();
+
+  // Step 1: perform CTE — session cookie is set on the response
+  const loginRes = await fastify.inject({ method: 'POST', url: '/test/login-cte' });
+  expect(loginRes.statusCode).toBe(200);
+
+  // Step 2: use the session cookie on a subsequent request
+  const sessionCookie = loginRes.headers['set-cookie']?.toString() ?? '';
+  const sessionRes = await fastify.inject({
+    method: 'GET',
+    url: '/test/session',
+    headers: { cookie: sessionCookie },
+  });
+
+  expect(sessionRes.statusCode).toBe(200);
+  expect(sessionRes.json().isAuthenticated).toBe(true);
+});
+
+test('loginWithCustomTokenExchange stores tokens in session so getAccessToken works', async () => {
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    domain: domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    appBaseUrl: 'http://localhost:3000',
+    sessionSecret: '<secret>',
+  });
+
+  fastify.post('/test/login-cte-token', async (request, reply) => {
+    await fastify.auth0Client!.loginWithCustomTokenExchange(
+      {
+        subjectToken: 'external-token',
+        subjectTokenType: 'urn:acme:legacy-token',
+      },
+      { request, reply }
+    );
+    return reply.send({ ok: true });
+  });
+
+  fastify.get('/test/access-token', async (request, reply) => {
+    const tokenSet = await fastify.auth0Client!.getAccessToken({ request, reply });
+    return reply.send({ accessToken: tokenSet.accessToken });
+  });
+
+  await fastify.ready();
+
+  // Step 1: perform CTE — session cookie is set on the response
+  const loginRes = await fastify.inject({ method: 'POST', url: '/test/login-cte-token' });
+  expect(loginRes.statusCode).toBe(200);
+
+  // Step 2: use the session cookie to retrieve the access token
+  const sessionCookie = loginRes.headers['set-cookie']?.toString() ?? '';
+  const tokenRes = await fastify.inject({
+    method: 'GET',
+    url: '/test/access-token',
+    headers: { cookie: sessionCookie },
+  });
+
+  expect(tokenRes.statusCode).toBe(200);
+  expect(tokenRes.json().accessToken).toBe(accessToken);
+});
+
+test('loginWithCustomTokenExchange passes actor token when provided', async () => {
+  let capturedBody: Record<string, string> = {};
+  server.use(
+    http.post(mockOpenIdConfiguration.token_endpoint, async ({ request }) => {
+      capturedBody = Object.fromEntries(new URLSearchParams(await request.text()));
+      return HttpResponse.json({
+        access_token: accessToken,
+        id_token: await generateToken(domain, 'user_123', '<client_id>'),
+        expires_in: 60,
+        token_type: 'Bearer',
+      });
+    })
+  );
+
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    domain: domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    appBaseUrl: 'http://localhost:3000',
+    sessionSecret: '<secret>',
+  });
+
+  fastify.post('/test/login-cte-actor', async (request, reply) => {
+    await fastify.auth0Client!.loginWithCustomTokenExchange(
+      {
+        subjectToken: 'external-token',
+        subjectTokenType: 'urn:acme:legacy-token',
+        actorToken: 'actor-token',
+        actorTokenType: 'urn:acme:actor-token',
+      },
+      { request, reply }
+    );
+    return reply.send({ ok: true });
+  });
+
+  await fastify.ready();
+
+  const res = await fastify.inject({ method: 'POST', url: '/test/login-cte-actor' });
+
+  expect(res.statusCode).toBe(200);
+  expect(capturedBody['actor_token']).toBe('actor-token');
+  expect(capturedBody['actor_token_type']).toBe('urn:acme:actor-token');
+});
+
+test('customTokenExchange returns TokenResponse without altering session', async () => {
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    domain: domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    appBaseUrl: 'http://localhost:3000',
+    sessionSecret: '<secret>',
+  });
+
+  fastify.post('/test/cte', async (request, reply) => {
+    const tokenResponse = await fastify.auth0Client!.customTokenExchange(
+      {
+        subjectToken: 'external-token',
+        subjectTokenType: 'urn:acme:legacy-token',
+      },
+      { request, reply }
+    );
+    const session = await fastify.auth0Client!.getSession({ request, reply });
+    return reply.send({
+      accessToken: tokenResponse.accessToken,
+      sessionExists: !!session,
+    });
+  });
+
+  await fastify.ready();
+
+  const res = await fastify.inject({
+    method: 'POST',
+    url: '/test/cte',
+  });
+
+  expect(res.statusCode).toBe(200);
+  expect(res.json().accessToken).toBe(accessToken);
+  expect(res.json().sessionExists).toBe(false);
+});
+
+test('customTokenExchange passes actor token when provided', async () => {
+  let capturedBody: Record<string, string> = {};
+  server.use(
+    http.post(mockOpenIdConfiguration.token_endpoint, async ({ request }) => {
+      capturedBody = Object.fromEntries(new URLSearchParams(await request.text()));
+      return HttpResponse.json({
+        access_token: accessToken,
+        expires_in: 60,
+        token_type: 'Bearer',
+      });
+    })
+  );
+
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    domain: domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    appBaseUrl: 'http://localhost:3000',
+    sessionSecret: '<secret>',
+  });
+
+  fastify.post('/test/cte-actor', async (request, reply) => {
+    await fastify.auth0Client!.customTokenExchange(
+      {
+        subjectToken: 'external-token',
+        subjectTokenType: 'urn:acme:legacy-token',
+        actorToken: 'actor-token',
+        actorTokenType: 'urn:acme:actor-token',
+      },
+      { request, reply }
+    );
+    return reply.send({ ok: true });
+  });
+
+  await fastify.ready();
+
+  const res = await fastify.inject({ method: 'POST', url: '/test/cte-actor' });
+
+  expect(res.statusCode).toBe(200);
+  expect(capturedBody['actor_token']).toBe('actor-token');
+  expect(capturedBody['actor_token_type']).toBe('urn:acme:actor-token');
+});
+
+test('customTokenExchange does not overwrite an existing session', async () => {
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    domain: domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    appBaseUrl: 'http://localhost:3000',
+    sessionSecret: '<secret>',
+  });
+
+  const existingStateData: StateData = {
+    user: { sub: 'existing-user' },
+    idToken: '<existing_id_token>',
+    accessToken: '<existing_access_token>',
+    refreshToken: '<existing_refresh_token>',
+    tokenSets: [],
+    internal: { sid: '<sid>', createdAt: 1234567890 },
+  };
+  const sessionCookieValue = await encrypt(existingStateData, '<secret>', '__a0_session', Date.now() + 10000);
+
+  fastify.post('/test/cte-no-overwrite', async (request, reply) => {
+    await fastify.auth0Client!.customTokenExchange(
+      {
+        subjectToken: 'external-token',
+        subjectTokenType: 'urn:acme:legacy-token',
+      },
+      { request, reply }
+    );
+    const session = await fastify.auth0Client!.getSession({ request, reply });
+    return reply.send({ userSub: session?.user?.sub });
+  });
+
+  await fastify.ready();
+
+  const res = await fastify.inject({
+    method: 'POST',
+    url: '/test/cte-no-overwrite',
+    headers: {
+      cookie: `__a0_session.0=${sessionCookieValue}`,
+    },
+  });
+
+  expect(res.statusCode).toBe(200);
+  expect(res.json().userSub).toBe('existing-user');
+});
