@@ -10,6 +10,7 @@
 - [Login using Custom Token Exchange](#login-using-custom-token-exchange)
   - [Performing a delegation exchange without a session](#performing-a-delegation-exchange-without-a-session)
   - [Using actor tokens for delegation](#using-actor-tokens-for-delegation)
+  - [Authenticating within an organization](#authenticating-within-an-organization)
 - [Multiple Custom Domains (MCD)](#multiple-custom-domains-mcd)
 
 ## Configuration
@@ -209,11 +210,10 @@ fastify.post('/custom-token-exchange', async (request, reply) => {
 
 After the exchange, the tokens are written to the session cookie, so the user is logged in. You can then use `getUser()`, `getSession()`, and `getAccessToken()` the same way as after any other login.
 
+Because `loginWithCustomTokenExchange()` writes the session cookie, pass the store options (`{ request, reply }`) so the SDK can read and write it, just like the other session methods in this plugin.
+
 > [!NOTE]
 > The `openid` scope is needed for `loginWithCustomTokenExchange()` to receive an ID token and fill in the session user. If you leave `openid` out, the SDK adds it for you. If you pass no `scope` at all, the SDK uses `openid profile email offline_access`.
-
-> [!IMPORTANT]
-> The store options (`{ request, reply }`) must be passed so the SDK can read and write the session cookie, just like the other client methods in this plugin.
 
 ### Performing a delegation exchange without a session
 
@@ -221,37 +221,31 @@ Use `customTokenExchange()` when you need a token to call another API but you do
 
 ```ts
 fastify.post('/delegate', async (request, reply) => {
-  const tokenResponse = await fastify.auth0Client!.customTokenExchange(
-    {
-      subjectToken: '<INCOMING_ACCESS_TOKEN>',
-      subjectTokenType: 'urn:ietf:params:oauth:token-type:access_token',
-      audience: '<DOWNSTREAM_API_AUDIENCE>',
-    },
-    { request, reply }
-  );
+  const tokenResponse = await fastify.auth0Client!.customTokenExchange({
+    subjectToken: '<INCOMING_ACCESS_TOKEN>',
+    subjectTokenType: 'urn:ietf:params:oauth:token-type:access_token',
+    audience: '<DOWNSTREAM_API_AUDIENCE>',
+  });
 
   // Use tokenResponse.accessToken to call the downstream API.
   return reply.send({ accessToken: tokenResponse.accessToken });
 });
 ```
 
-No session is read or written. The store options are only used for domain resolution when the plugin runs in resolver mode.
+No session is read or written. You can omit the store options (`{ request, reply }`) unless you run the plugin in [MCD resolver mode](#resolver-mode), where they are used only to resolve the domain.
 
 ### Using actor tokens for delegation
 
 When an intermediate service acts on behalf of a user, pass `actorToken` and `actorTokenType` together. Both are needed when you use actor tokens:
 
 ```ts
-const tokenResponse = await fastify.auth0Client!.customTokenExchange(
-  {
-    subjectToken: '<USER_TOKEN>',
-    subjectTokenType: 'urn:acme:user-token',
-    actorToken: '<SERVICE_TOKEN>',
-    actorTokenType: 'urn:acme:service-token',
-    audience: '<AUTH0_AUDIENCE>',
-  },
-  { request, reply }
-);
+const tokenResponse = await fastify.auth0Client!.customTokenExchange({
+  subjectToken: '<USER_TOKEN>',
+  subjectTokenType: 'urn:acme:user-token',
+  actorToken: '<SERVICE_TOKEN>',
+  actorTokenType: 'urn:acme:service-token',
+  audience: '<AUTH0_AUDIENCE>',
+});
 
 // tokenResponse.act holds the actor claim from the issued token, e.g. { sub: 'service-account-id' }.
 console.log(tokenResponse.act?.sub);
@@ -259,6 +253,25 @@ console.log(tokenResponse.act?.sub);
 
 > [!IMPORTANT]
 > When an actor token is sent, Auth0 does not return a refresh token, even if `offline_access` is in the scope. This is true for both methods. For `loginWithCustomTokenExchange()`, it means `getAccessToken()` will throw once the access token expires, because it cannot refresh on its own. Run the exchange again to get a new token.
+
+### Authenticating within an organization
+
+To exchange a token within an [organization](https://auth0.com/docs/manage-users/organizations) context, pass the `organization` option with the organization ID or name. The user is authenticated within that organization, and the organization ID is included in the access token. This works with both methods:
+
+```ts
+fastify.post('/custom-token-exchange', async (request, reply) => {
+  await fastify.auth0Client!.loginWithCustomTokenExchange(
+    {
+      subjectToken: '<EXTERNAL_TOKEN>',
+      subjectTokenType: 'urn:acme:legacy-token',
+      organization: '<ORGANIZATION_ID_OR_NAME>',
+    },
+    { request, reply }
+  );
+
+  return reply.send({ ok: true });
+});
+```
 
 ## Multiple Custom Domains (MCD)
 

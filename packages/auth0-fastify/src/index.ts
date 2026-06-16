@@ -20,6 +20,8 @@ export type {
   LoginWithCustomTokenExchangeOptions,
   CustomTokenExchangeOptions,
   LoginWithCustomTokenExchangeResult,
+  TokenResponse,
+  ActClaim,
 } from '@auth0/auth0-server-js';
 export { CookieTransactionStore } from '@auth0/auth0-server-js';
 
