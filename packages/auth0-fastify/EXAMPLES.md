@@ -7,6 +7,9 @@
 - [The `ServerClient` instance](#the-serverclient-instance)
 - [Protecting Routes](#protecting-routes)
 - [Requesting an Access Token to call an API](#requesting-an-access-token-to-call-an-api)
+- [Login using Custom Token Exchange](#login-using-custom-token-exchange)
+  - [Performing a delegation exchange without a session](#performing-a-delegation-exchange-without-a-session)
+  - [Using actor tokens for delegation](#using-actor-tokens-for-delegation)
 - [Multiple Custom Domains (MCD)](#multiple-custom-domains-mcd)
 
 ## Configuration
@@ -179,6 +182,83 @@ Retrieving the token can be achieved by using `getAccessToken`:
 const accessTokenResult = await fastify.auth0Client.getAccessToken({ request, reply });
 console.log(accessTokenResult.accessToken);
 ```
+
+## Login using Custom Token Exchange
+
+Custom Token Exchange lets you create an Auth0 session from a token you already hold (for example a Google ID token or a token from a legacy system), without sending the user through a browser login. This needs a [Token Exchange Profile](https://auth0.com/docs/authenticate/custom-token-exchange) set up in your Auth0 tenant.
+
+The plugin does not mount a route for this flow. You call it yourself from your own route using `fastify.auth0Client`, in the same way you would use `loginBackchannel()`.
+
+Use `loginWithCustomTokenExchange()` when you want to exchange the token and store the result as a user session:
+
+```ts
+fastify.post('/custom-token-exchange', async (request, reply) => {
+  await fastify.auth0Client!.loginWithCustomTokenExchange(
+    {
+      subjectToken: '<EXTERNAL_TOKEN>',
+      subjectTokenType: 'urn:acme:legacy-token',
+      audience: '<AUTH0_AUDIENCE>',
+      scope: 'openid profile email',
+    },
+    { request, reply }
+  );
+
+  return reply.send({ ok: true });
+});
+```
+
+After the exchange, the tokens are written to the session cookie, so the user is logged in. You can then use `getUser()`, `getSession()`, and `getAccessToken()` the same way as after any other login.
+
+> [!NOTE]
+> The `openid` scope is needed for `loginWithCustomTokenExchange()` to receive an ID token and fill in the session user. If you leave `openid` out, the SDK adds it for you. If you pass no `scope` at all, the SDK uses `openid profile email offline_access`.
+
+> [!IMPORTANT]
+> The store options (`{ request, reply }`) must be passed so the SDK can read and write the session cookie, just like the other client methods in this plugin.
+
+### Performing a delegation exchange without a session
+
+Use `customTokenExchange()` when you need a token to call another API but you do not want to create or change the user session. This fits delegation and impersonation flows:
+
+```ts
+fastify.post('/delegate', async (request, reply) => {
+  const tokenResponse = await fastify.auth0Client!.customTokenExchange(
+    {
+      subjectToken: '<INCOMING_ACCESS_TOKEN>',
+      subjectTokenType: 'urn:ietf:params:oauth:token-type:access_token',
+      audience: '<DOWNSTREAM_API_AUDIENCE>',
+    },
+    { request, reply }
+  );
+
+  // Use tokenResponse.accessToken to call the downstream API.
+  return reply.send({ accessToken: tokenResponse.accessToken });
+});
+```
+
+No session is read or written. The store options are only used for domain resolution when the plugin runs in resolver mode.
+
+### Using actor tokens for delegation
+
+When an intermediate service acts on behalf of a user, pass `actorToken` and `actorTokenType` together. Both are needed when you use actor tokens:
+
+```ts
+const tokenResponse = await fastify.auth0Client!.customTokenExchange(
+  {
+    subjectToken: '<USER_TOKEN>',
+    subjectTokenType: 'urn:acme:user-token',
+    actorToken: '<SERVICE_TOKEN>',
+    actorTokenType: 'urn:acme:service-token',
+    audience: '<AUTH0_AUDIENCE>',
+  },
+  { request, reply }
+);
+
+// tokenResponse.act holds the actor claim from the issued token, e.g. { sub: 'service-account-id' }.
+console.log(tokenResponse.act?.sub);
+```
+
+> [!IMPORTANT]
+> When an actor token is sent, Auth0 does not return a refresh token, even if `offline_access` is in the scope. This is true for both methods. For `loginWithCustomTokenExchange()`, it means `getAccessToken()` will throw once the access token expires, because it cannot refresh on its own. Run the exchange again to get a new token.
 
 ## Multiple Custom Domains (MCD)
 
