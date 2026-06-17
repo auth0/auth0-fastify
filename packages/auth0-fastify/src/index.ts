@@ -24,6 +24,7 @@ export type {
   ActClaim,
 } from '@auth0/auth0-server-js';
 export { CookieTransactionStore } from '@auth0/auth0-server-js';
+export { TokenExchangeError, MissingClientAuthError } from '@auth0/auth0-server-js';
 
 declare module 'fastify' {
   /**
