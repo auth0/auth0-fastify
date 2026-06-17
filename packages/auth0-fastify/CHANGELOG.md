@@ -1,7 +1,7 @@
 # Change Log
 
 ## [v1.4.0](https://github.com/auth0/auth0-fastify/tree/auth0-fastify-v1.4.0) (2026-06-17)
-[Full Changelog](https://github.com/auth0/auth0-fastify/compare/auth0-fastify-vapi-v1.3.0...auth0-fastify-v1.4.0)
+[Full Changelog](https://github.com/auth0/auth0-fastify/compare/auth0-fastify-v1.3.0...auth0-fastify-v1.4.0)
 
 **Added**
 - feat(auth0-fastify): add Custom Token Exchange support [\#78](https://github.com/auth0/auth0-fastify/pull/78) ([@nandan-bhat](https://github.com/nandan-bhat))
