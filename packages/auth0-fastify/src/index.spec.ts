@@ -1118,3 +1118,350 @@ test('auth/unconnect/callback uses custom route when provided', async () => {
   expect(url.pathname).toBe('/');
   expect(url.searchParams.size).toBe(0);
 });
+
+test('loginWithCustomTokenExchange writes the exchanged user to the session', async () => {
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    domain: domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    appBaseUrl: 'http://localhost:3000',
+    sessionSecret: '<secret>',
+  });
+
+  fastify.post('/custom-token-exchange', async (request, reply) => {
+    await fastify.auth0Client!.loginWithCustomTokenExchange(
+      {
+        subjectToken: 'external-token-123',
+        subjectTokenType: 'urn:acme:legacy-token',
+      },
+      { request, reply }
+    );
+
+    return reply.send({ ok: true });
+  });
+
+  const res = await fastify.inject({
+    method: 'POST',
+    url: '/custom-token-exchange',
+  });
+
+  expect(res.statusCode).toBe(200);
+
+  const cookieName = '__a0_session';
+  const cookieValueRaw = fastify.parseCookie(res.headers['set-cookie']?.toString() as string)[
+    `${cookieName}.0`
+  ] as string;
+  const session = (await decrypt(cookieValueRaw, '<secret>', cookieName)) as StateData;
+
+  expect(session.user?.sub).toBe('user_123');
+});
+
+test('loginWithCustomTokenExchange stores a token under the configured audience', async () => {
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    domain: domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    audience: 'https://api.example.com',
+    appBaseUrl: 'http://localhost:3000',
+    sessionSecret: '<secret>',
+  });
+
+  fastify.post('/custom-token-exchange', async (request, reply) => {
+    await fastify.auth0Client!.loginWithCustomTokenExchange(
+      {
+        subjectToken: 'external-token-123',
+        subjectTokenType: 'urn:acme:legacy-token',
+        audience: 'https://api.example.com',
+      },
+      { request, reply }
+    );
+
+    return reply.send({ ok: true });
+  });
+
+  const res = await fastify.inject({
+    method: 'POST',
+    url: '/custom-token-exchange',
+  });
+
+  expect(res.statusCode).toBe(200);
+
+  const cookieName = '__a0_session';
+  const cookieValueRaw = fastify.parseCookie(res.headers['set-cookie']?.toString() as string)[
+    `${cookieName}.0`
+  ] as string;
+  const session = (await decrypt(cookieValueRaw, '<secret>', cookieName)) as StateData;
+
+  expect(session.tokenSets[0]?.audience).toBe('https://api.example.com');
+  expect(session.tokenSets[0]?.accessToken).toBe(accessToken);
+});
+
+test('loginWithCustomTokenExchange persists the act claim on the session user', async () => {
+  server.use(
+    http.post(mockOpenIdConfiguration.token_endpoint, async () => {
+      return HttpResponse.json({
+        access_token: accessToken,
+        id_token: await generateToken(domain, 'user_123', '<client_id>', undefined, undefined, undefined, {
+          act: { sub: 'service-account-id' },
+        }),
+        expires_in: 60,
+        token_type: 'Bearer',
+      });
+    })
+  );
+
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    domain: domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    appBaseUrl: 'http://localhost:3000',
+    sessionSecret: '<secret>',
+  });
+
+  fastify.post('/custom-token-exchange', async (request, reply) => {
+    await fastify.auth0Client!.loginWithCustomTokenExchange(
+      {
+        subjectToken: 'user-token',
+        subjectTokenType: 'urn:acme:user-token',
+        actorToken: 'service-token',
+        actorTokenType: 'urn:acme:service-token',
+      },
+      { request, reply }
+    );
+
+    return reply.send({ ok: true });
+  });
+
+  const res = await fastify.inject({
+    method: 'POST',
+    url: '/custom-token-exchange',
+  });
+
+  expect(res.statusCode).toBe(200);
+
+  const cookieName = '__a0_session';
+  const cookieValueRaw = fastify.parseCookie(res.headers['set-cookie']?.toString() as string)[
+    `${cookieName}.0`
+  ] as string;
+  const session = (await decrypt(cookieValueRaw, '<secret>', cookieName)) as StateData;
+
+  expect((session.user?.act as { sub: string })?.sub).toBe('service-account-id');
+});
+
+test('customTokenExchange returns a token without creating a session', async () => {
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    domain: domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    appBaseUrl: 'http://localhost:3000',
+    sessionSecret: '<secret>',
+  });
+
+  fastify.post('/delegate', async (request, reply) => {
+    const tokenResponse = await fastify.auth0Client!.customTokenExchange(
+      {
+        subjectToken: 'external-token-123',
+        subjectTokenType: 'urn:acme:legacy-token',
+      },
+      { request, reply }
+    );
+
+    const session = await fastify.auth0Client!.getSession({ request, reply });
+    return reply.send({ accessToken: tokenResponse.accessToken, hasSession: !!session });
+  });
+
+  const res = await fastify.inject({
+    method: 'POST',
+    url: '/delegate',
+  });
+
+  expect(res.statusCode).toBe(200);
+  expect(res.json().accessToken).toBe(accessToken);
+  expect(res.json().hasSession).toBe(false);
+  expect(res.headers['set-cookie']).toBeUndefined();
+});
+
+test('customTokenExchange does not overwrite an existing session', async () => {
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    domain: domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    appBaseUrl: 'http://localhost:3000',
+    sessionSecret: '<secret>',
+  });
+
+  const stateData: StateData = {
+    user: {
+      sub: 'original-user',
+    },
+    idToken: '<id_token>',
+    refreshToken: '<refresh_token>',
+    tokenSets: [],
+    internal: {
+      sid: '<sid>',
+      createdAt: 1234567890,
+    },
+  };
+  const cookieValue = await encrypt(stateData, '<secret>', '__a0_session', Date.now() + 1000);
+
+  fastify.post('/delegate', async (request, reply) => {
+    await fastify.auth0Client!.customTokenExchange(
+      {
+        subjectToken: 'external-token-123',
+        subjectTokenType: 'urn:acme:legacy-token',
+      },
+      { request, reply }
+    );
+
+    const session = await fastify.auth0Client!.getSession({ request, reply });
+    return reply.send({ sub: session?.user?.sub });
+  });
+
+  const res = await fastify.inject({
+    method: 'POST',
+    url: '/delegate',
+    headers: {
+      cookie: `__a0_session.0=${cookieValue}`,
+    },
+  });
+
+  expect(res.statusCode).toBe(200);
+  expect(res.json().sub).toBe('original-user');
+  expect(res.headers['set-cookie']).toBeUndefined();
+});
+
+test('customTokenExchange surfaces the act claim when an actor token is used', async () => {
+  server.use(
+    http.post(mockOpenIdConfiguration.token_endpoint, async () => {
+      return HttpResponse.json({
+        access_token: accessToken,
+        id_token: await generateToken(domain, 'user_123', '<client_id>', undefined, undefined, undefined, {
+          act: { sub: 'service-account-id' },
+        }),
+        expires_in: 60,
+        token_type: 'Bearer',
+      });
+    })
+  );
+
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    domain: domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    appBaseUrl: 'http://localhost:3000',
+    sessionSecret: '<secret>',
+  });
+
+  fastify.post('/delegate', async (request, reply) => {
+    const tokenResponse = await fastify.auth0Client!.customTokenExchange(
+      {
+        subjectToken: 'user-token',
+        subjectTokenType: 'urn:acme:user-token',
+        actorToken: 'service-token',
+        actorTokenType: 'urn:acme:service-token',
+      },
+      { request, reply }
+    );
+
+    return reply.send({ act: tokenResponse.act });
+  });
+
+  const res = await fastify.inject({
+    method: 'POST',
+    url: '/delegate',
+  });
+
+  expect(res.statusCode).toBe(200);
+  expect(res.json().act).toEqual({ sub: 'service-account-id' });
+});
+
+test('customTokenExchange throws when the exchange fails', async () => {
+  server.use(
+    http.post(mockOpenIdConfiguration.token_endpoint, () => {
+      return HttpResponse.json({ error: 'invalid_request', error_description: 'bad token' }, { status: 400 });
+    })
+  );
+
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    domain: domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    appBaseUrl: 'http://localhost:3000',
+    sessionSecret: '<secret>',
+  });
+
+  fastify.post('/delegate', async (request, reply) => {
+    try {
+      await fastify.auth0Client!.customTokenExchange(
+        {
+          subjectToken: 'external-token-123',
+          subjectTokenType: 'urn:acme:legacy-token',
+        },
+        { request, reply }
+      );
+      return reply.send({ ok: true });
+    } catch (e) {
+      // auth0-server-js exposes TokenExchangeError as a type only, not a runtime
+      // value, so we match on the error name rather than `instanceof`.
+      return reply.code(400).send({ name: (e as Error).name });
+    }
+  });
+
+  const res = await fastify.inject({
+    method: 'POST',
+    url: '/delegate',
+  });
+
+  expect(res.statusCode).toBe(400);
+  expect(res.json().name).toBe('TokenExchangeError');
+});
+
+test('customTokenExchange forwards the organization to the token endpoint', async () => {
+  let capturedOrganization: string | null = null;
+  server.use(
+    http.post(mockOpenIdConfiguration.token_endpoint, async ({ request }) => {
+      const info = await request.formData();
+      capturedOrganization = info.get('organization') as string;
+      return HttpResponse.json({
+        access_token: accessToken,
+        id_token: await generateToken(domain, 'user_123', '<client_id>'),
+        expires_in: 60,
+        token_type: 'Bearer',
+      });
+    })
+  );
+
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    domain: domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    appBaseUrl: 'http://localhost:3000',
+    sessionSecret: '<secret>',
+  });
+
+  fastify.post('/delegate', async (request, reply) => {
+    await fastify.auth0Client!.customTokenExchange({
+      subjectToken: 'external-token-123',
+      subjectTokenType: 'urn:acme:legacy-token',
+      organization: 'org_123',
+    });
+
+    return reply.send({ ok: true });
+  });
+
+  const res = await fastify.inject({
+    method: 'POST',
+    url: '/delegate',
+  });
+
+  expect(res.statusCode).toBe(200);
+  expect(capturedOrganization).toBe('org_123');
+});

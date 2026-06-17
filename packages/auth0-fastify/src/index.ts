@@ -16,7 +16,15 @@ import { FastifyCookieHandler } from './store/fastify-cookie-handler.js';
 
 export * from './types.js';
 export type { DomainResolver } from '@auth0/auth0-server-js';
+export type {
+  LoginWithCustomTokenExchangeOptions,
+  CustomTokenExchangeOptions,
+  LoginWithCustomTokenExchangeResult,
+  TokenResponse,
+  ActClaim,
+} from '@auth0/auth0-server-js';
 export { CookieTransactionStore } from '@auth0/auth0-server-js';
+export { TokenExchangeError, MissingClientAuthError } from '@auth0/auth0-server-js';
 
 declare module 'fastify' {
   /**
