@@ -16,7 +16,7 @@ npm install
 
 So that both hostnames resolve to your machine, add the following to `/etc/hosts`:
 
-```
+```text
 127.0.0.1  tenant-1.localhost
 127.0.0.1  tenant-2.localhost
 ```

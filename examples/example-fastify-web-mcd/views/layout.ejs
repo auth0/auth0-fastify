@@ -42,7 +42,7 @@
           <li class="nav-item">
             <% if(isLoggedIn){ %>
             <a class="nav-link link-body-emphasis px-2" href="/auth/logout"
-              >Log out <%- locals.user ? '(' + locals.user.name + ')' : '' %></a
+              >Log out <%= locals.user ? '(' + locals.user.name + ')' : '' %></a
             >
             <% } else{ %>
             <a class="nav-link link-body-emphasis px-2" href="/auth/login"
