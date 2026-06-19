@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { InvalidConfigurationError } from './errors/index.js';
-import { normalizeAppBaseUrl, resolveAppBaseUrl } from './app-base-url.js';
+import { normalizeAppBaseUrl, resolveAppBaseUrl, resolveSecureCookie } from './app-base-url.js';
 
 // Minimal stand-in for the parts of FastifyRequest the module reads.
 function fakeRequest(host: string | undefined, protocol: string) {
@@ -79,5 +79,34 @@ describe('resolveAppBaseUrl (allow-list)', () => {
     expect(() => resolveAppBaseUrl(config, fakeRequest('evil.example.com', 'https'))).toThrow(
       InvalidConfigurationError
     );
+  });
+});
+
+describe('resolveSecureCookie', () => {
+  const dynamic = { mode: 'dynamic' } as const;
+  const stat = { mode: 'static', value: 'https://app.example.com' } as const;
+
+  test('dynamic + unset defaults to true', () => {
+    expect(resolveSecureCookie(dynamic, undefined, false)).toBe(true);
+  });
+
+  test('dynamic + explicit false in production throws', () => {
+    expect(() => resolveSecureCookie(dynamic, false, true)).toThrow(InvalidConfigurationError);
+  });
+
+  test('dynamic + explicit false outside production is honored', () => {
+    expect(resolveSecureCookie(dynamic, false, false)).toBe(false);
+  });
+
+  test('dynamic + explicit true is honored', () => {
+    expect(resolveSecureCookie(dynamic, true, true)).toBe(true);
+  });
+
+  test('static returns the configured value unchanged (undefined)', () => {
+    expect(resolveSecureCookie(stat, undefined, true)).toBeUndefined();
+  });
+
+  test('static returns the configured value unchanged (false in production)', () => {
+    expect(resolveSecureCookie(stat, false, true)).toBe(false);
   });
 });

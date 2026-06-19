@@ -89,3 +89,37 @@ export function resolveAppBaseUrl<
 
   return inferred;
 }
+
+/**
+ * Resolve the effective `secure` flag for the session cookie.
+ *
+ * When the base URL is dynamic or allow-listed there is no single static
+ * protocol to derive `secure` from, so we default it to `true` and forbid an
+ * explicit downgrade in production (anti-downgrade). When the base URL is a
+ * static string, the configured value passes through unchanged so the caller
+ * keeps the existing protocol-based default behavior.
+ *
+ * @param config The normalized appBaseUrl config.
+ * @param configuredSecure The `secure` value the app set, or `undefined` if unset.
+ * @param isProduction Whether the process is running in production.
+ */
+export function resolveSecureCookie(
+  config: AppBaseUrlConfig,
+  configuredSecure: boolean | undefined,
+  isProduction: boolean
+): boolean | undefined {
+  if (config.mode === 'static') {
+    return configuredSecure;
+  }
+
+  if (configuredSecure === false) {
+    if (isProduction) {
+      throw new InvalidConfigurationError(
+        'Insecure session cookies (secure: false) are not allowed in production when appBaseUrl is dynamic or an allow-list.'
+      );
+    }
+    return false;
+  }
+
+  return true;
+}
