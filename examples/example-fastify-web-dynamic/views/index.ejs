@@ -1,0 +1,15 @@
+<% if(isLoggedIn){ %> <% if(locals.user){ %>
+<h1>Hello, <%= locals.user.name %>!</h1>
+<% } %>
+<% } else{ %>
+<h1>You are not logged in.</h1>
+<% } %>
+
+<p class="text-muted">
+  Resolved request origin: <code><%= locals.origin %></code>
+</p>
+<p class="text-muted">
+  This is the value the SDK infers as the application base URL for this request
+  (from <code>request.protocol</code> and <code>request.host</code>). Change the
+  forwarded host/proto and it changes with the request.
+</p>
