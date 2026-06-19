@@ -15,6 +15,17 @@ const DOMAIN = 'example.auth0.local';
 const BRAND_1_ORIGIN = 'http://brand-1.localhost:3000';
 const BRAND_2_ORIGIN = 'http://brand-2.localhost:3000';
 
+// Capture the original values so we can restore them in teardown and keep this
+// suite from leaking env state into other tests.
+const ENV_KEYS = [
+  'AUTH0_DOMAIN',
+  'AUTH0_CLIENT_ID',
+  'AUTH0_CLIENT_SECRET',
+  'AUTH0_SESSION_SECRET',
+  'APP_BASE_URL',
+] as const;
+const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
+
 process.env.AUTH0_DOMAIN = DOMAIN;
 process.env.AUTH0_CLIENT_ID = '<client_id>';
 process.env.AUTH0_CLIENT_SECRET = '<client_secret>';
@@ -48,6 +59,14 @@ afterEach(() => server.resetHandlers());
 afterAll(async () => {
   server.close();
   await fastify.close();
+  // Restore the env vars we mutated so this suite does not affect others.
+  for (const key of ENV_KEYS) {
+    if (originalEnv[key] === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = originalEnv[key];
+    }
+  }
 });
 
 describe('example-fastify-web-dynamic: per-host base URL resolution', () => {
