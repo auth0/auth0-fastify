@@ -105,3 +105,10 @@ jobs:
         uses: amannn/action-semantic-pull-request@48b255084e3858b30ffd45ac31f80bba4e23da4d # v6.1.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          scopes: |
+            auth0-fastify
+            auth0-fastify-api
+            ci
+            security
+            deps
