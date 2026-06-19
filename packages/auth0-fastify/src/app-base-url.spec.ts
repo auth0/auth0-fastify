@@ -46,3 +46,38 @@ describe('resolveAppBaseUrl (static + dynamic)', () => {
     );
   });
 });
+
+describe('normalizeAppBaseUrl (allow-list)', () => {
+  test('array returns allowlist mode with normalized origins', () => {
+    const config = normalizeAppBaseUrl(['https://a.example.com', 'https://b.example.com/ignored-path']);
+    expect(config.mode).toBe('allowlist');
+    if (config.mode !== 'allowlist') throw new Error('expected allowlist');
+    expect([...config.origins].sort()).toEqual(['https://a.example.com', 'https://b.example.com']);
+  });
+
+  test('empty array throws', () => {
+    expect(() => normalizeAppBaseUrl([])).toThrow(InvalidConfigurationError);
+  });
+
+  test('array with a non-absolute entry throws', () => {
+    expect(() => normalizeAppBaseUrl(['https://a.example.com', 'nope'])).toThrow(
+      InvalidConfigurationError
+    );
+  });
+});
+
+describe('resolveAppBaseUrl (allow-list)', () => {
+  test('returns inferred origin when it matches the allow-list', () => {
+    const config = normalizeAppBaseUrl(['https://a.example.com', 'https://b.example.com']);
+    expect(resolveAppBaseUrl(config, fakeRequest('b.example.com', 'https'))).toBe(
+      'https://b.example.com'
+    );
+  });
+
+  test('throws when inferred origin is not in the allow-list', () => {
+    const config = normalizeAppBaseUrl(['https://a.example.com']);
+    expect(() => resolveAppBaseUrl(config, fakeRequest('evil.example.com', 'https'))).toThrow(
+      InvalidConfigurationError
+    );
+  });
+});
