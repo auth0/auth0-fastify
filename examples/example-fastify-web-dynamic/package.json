@@ -5,13 +5,17 @@
     "type": "module",
     "scripts": {
         "start": "tsx src/index.ts --project tsconfig.json",
-        "build": "tsc --project tsconfig.json"
+        "build": "tsc --project tsconfig.json",
+        "test": "vitest run",
+        "test:ci": "vitest run"
     },
     "devDependencies": {
         "@types/ejs": "^3.1.5",
+        "msw": "^2.11.3",
         "ts-node": "^10.9.2",
         "tsx": "^4.19.2",
-        "typescript": "~5.8.2"
+        "typescript": "~5.8.2",
+        "vitest": "^3.0.5"
     },
     "dependencies": {
         "@auth0/auth0-fastify": "*",

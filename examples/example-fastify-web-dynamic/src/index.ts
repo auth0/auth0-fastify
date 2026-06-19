@@ -122,4 +122,11 @@ const start = async () => {
   }
 };
 
-start();
+// Start the server only when this file is run directly (e.g. `npm start`), not
+// when it is imported (e.g. by the test suite, which drives `fastify` via
+// `fastify.inject`).
+if (process.argv[1] === __filename) {
+  start();
+}
+
+export { fastify };
