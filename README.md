@@ -18,6 +18,7 @@ Auth0-Fastify Mono Repo, containing SDKs for implementing user authentication in
 The following examples can be found in the examples directory:
 
 - [Fastify Web App Example](./examples/example-fastify-web/README.md)
+- [Fastify Web App Multiple Custom Domains (MCD) Example](./examples/example-fastify-web-mcd/README.md)
 - [Fastify API Example](./examples/example-fastify-api/README.md)
 
 Before running the examples, you need to install the dependencies for the monorepo and build all the packages.
