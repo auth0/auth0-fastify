@@ -28,7 +28,7 @@ fastify.register(fastifyView, {
   engine: {
     ejs: ejs,
   },
-  root: './views',
+  root: path.join(__dirname, '../views'),
   layout: 'layout.ejs',
 });
 
