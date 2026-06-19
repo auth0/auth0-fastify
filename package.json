@@ -1,6 +1,7 @@
 {
   "name": "auth0-fastify",
   "version": "1.0.0",
+  "type": "module",
   "workspaces": [
     "packages/*",
     "examples/*"
