@@ -78,10 +78,13 @@ export function resolveAppBaseUrl<
 
   const inferred = inferFromRequest(request);
 
-  if (config.mode === 'allowlist' && !config.origins.has(new URL(inferred).origin)) {
-    throw new InvalidConfigurationError(
-      `The inferred origin "${new URL(inferred).origin}" is not in the configured appBaseUrl allow-list.`
-    );
+  if (config.mode === 'allowlist') {
+    const origin = new URL(inferred).origin;
+    if (!config.origins.has(origin)) {
+      throw new InvalidConfigurationError(
+        `The inferred origin "${origin}" is not in the configured appBaseUrl allow-list.`
+      );
+    }
   }
 
   return inferred;
