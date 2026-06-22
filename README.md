@@ -6,12 +6,48 @@ Auth0-Fastify Mono Repo, containing SDKs for implementing user authentication in
 [![License](https://img.shields.io/:license-mit-blue.svg?style=flat)](https://opensource.org/licenses/MIT)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/auth0/auth0-fastify)
 
-📚 [Packages](#packages) - 💬 [Feedback](#feedback)
+📚 [Packages](#packages) - 🔎 [Features](#features) - 💬 [Feedback](#feedback)
 
 ## Packages
 
-- [`auth0-fastify`](./packages/auth0-fastify/README.md) - Authentication SDK for Fastify Applications on JavaScript runtimes.
-- [`auth0-fastify-api`](./packages/auth0-fastify-api/README.md) - Authentication SDK for Fastify API's on JavaScript runtimes.
+Two SDKs — pick the one that matches your application:
+
+- [`@auth0/auth0-fastify`](./packages/auth0-fastify/README.md) — for server-rendered **web apps** where users log in. Authenticates with an encrypted browser session cookie and handles login, logout, callback, and session management.
+- [`@auth0/auth0-fastify-api`](./packages/auth0-fastify-api/README.md) — for **APIs** / resource servers consumed by SPAs, mobile, or services. Authenticates with an `Authorization: Bearer <access_token>` and authorizes by scopes and claims.
+
+## Features
+
+Jump straight to the capability you need.
+
+### `@auth0/auth0-fastify` — Web applications
+
+| Feature | What it does |
+| --- | --- |
+| [Quick start](./packages/auth0-fastify/README.md#getting-started) | Register the Auth0 plugin with `fastify.register` in a few lines |
+| [Built-in routes](./packages/auth0-fastify/README.md#routes) | `/auth/login`, `/auth/logout`, `/auth/callback`, back-channel logout |
+| [Custom login / logout / callback](./packages/auth0-fastify/README.md#3-adding-login-and-logout) | Roll your own routes instead of the mounted ones |
+| [Configure mounted routes](./packages/auth0-fastify/EXAMPLES.md#configuring-the-mounted-routes) | Disable the built-in routes or add account-linking routes |
+| [Protect a route with a session](./packages/auth0-fastify/README.md#4-protecting-routes) | Gate server-rendered pages behind a login session |
+| [Get the current session / user](./packages/auth0-fastify/README.md#4-protecting-routes) | Read the authenticated user with `getUser()` / `getSession()` |
+| [Call an API (`getAccessToken`)](./packages/auth0-fastify/README.md#requesting-an-access-token-to-call-an-api) | Get an access token to call APIs as the user |
+| [Custom Token Exchange](./packages/auth0-fastify/EXAMPLES.md#login-using-custom-token-exchange) | Create a session from an external token without a browser login |
+| [Multiple Custom Domains (MCD)](./packages/auth0-fastify/EXAMPLES.md#multiple-custom-domains-mcd) | Resolve the Auth0 domain per request |
+| [Custom `fetch`](./packages/auth0-fastify/EXAMPLES.md#configuring-a-customfetch-implementation) | Swap in your own fetch (proxies, retries, instrumentation) |
+| [Discovery cache](./packages/auth0-fastify/EXAMPLES.md#discovery-cache) | Control caching of OIDC discovery metadata and JWKS |
+
+### `@auth0/auth0-fastify-api` — APIs
+
+| Feature | What it does |
+| --- | --- |
+| [Quick start](./packages/auth0-fastify-api/README.md#getting-started) | Protect an API with `fastify.register` in a few lines |
+| [Protect an API route (`requireAuth`)](./packages/auth0-fastify-api/README.md#protecting-api-routes) | Require a valid bearer access token in a preHandler |
+| [Read token claims (`request.user`)](./packages/auth0-fastify-api/README.md#protecting-api-routes) | Access claims extracted from the verified token |
+| [Custom token / user type](./packages/auth0-fastify-api/README.md#protecting-api-routes) | Type your custom claims via module augmentation |
+| [DPoP (proof-of-possession)](./packages/auth0-fastify-api/EXAMPLES.md#dpop-demonstration-of-proof-of-possession) | Bind access tokens to a client key pair (RFC 9449) |
+| [On-Behalf-Of Token Exchange](./packages/auth0-fastify-api/README.md#on-behalf-of-token-exchange) | Exchange the caller's token for a downstream API token |
+| [Multiple Custom Domains (MCD)](./packages/auth0-fastify-api/EXAMPLES.md#multiple-custom-domains-mcd) | Accept tokens from multiple issuer domains of one tenant |
+| [Custom `fetch`](./packages/auth0-fastify-api/EXAMPLES.md#configuring-a-customfetch-implementation) | Swap in your own fetch (proxies, retries, instrumentation) |
+| [Discovery cache](./packages/auth0-fastify-api/EXAMPLES.md#discovery-cache-configuration) | Control caching of discovery metadata and signing keys |
 
 ## Running Examples
 

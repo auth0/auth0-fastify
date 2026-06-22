@@ -4,12 +4,30 @@ The Auth0 Fastify SDK is a library for implementing user authentication in Fasti
 ![Downloads](https://img.shields.io/npm/dw/@auth0/auth0-fastify)
 [![License](https://img.shields.io/:license-mit-blue.svg?style=flat)](https://opensource.org/licenses/MIT)
 
-📚 [Documentation](#documentation) - 🚀 [Getting Started](#getting-started) - 💬 [Feedback](#feedback)
+📚 [Documentation](#documentation) - 🔎 [Features](#features) - 🚀 [Getting Started](#getting-started) - 💬 [Feedback](#feedback)
 
 ## Documentation
 
 - [Examples](https://github.com/auth0/auth0-fastify/blob/main/packages/auth0-fastify/EXAMPLES.md) - examples for your different use cases.
 - [Docs Site](https://auth0.com/docs) - explore our docs site and learn more about Auth0.
+
+## Features
+
+Jump straight to the capability you need.
+
+| Feature | What it does |
+| --- | --- |
+| [Quick start](#getting-started) | Register the Auth0 plugin with `fastify.register` in a few lines |
+| [Built-in routes](#routes) | `/auth/login`, `/auth/logout`, `/auth/callback`, back-channel logout |
+| [Custom login / logout / callback](#3-adding-login-and-logout) | Roll your own routes instead of the mounted ones |
+| [Configure mounted routes](./EXAMPLES.md#configuring-the-mounted-routes) | Disable the built-in routes or add account-linking routes |
+| [Protect a route with a session](#4-protecting-routes) | Gate server-rendered pages behind a login session |
+| [Get the current session / user](#4-protecting-routes) | Read the authenticated user with `getUser()` / `getSession()` |
+| [Call an API (`getAccessToken`)](#requesting-an-access-token-to-call-an-api) | Get an access token to call APIs as the user |
+| [Custom Token Exchange](./EXAMPLES.md#login-using-custom-token-exchange) | Create a session from an external token without a browser login |
+| [Multiple Custom Domains (MCD)](./EXAMPLES.md#multiple-custom-domains-mcd) | Resolve the Auth0 domain per request |
+| [Custom `fetch`](./EXAMPLES.md#configuring-a-customfetch-implementation) | Swap in your own fetch (proxies, retries, instrumentation) |
+| [Discovery cache](./EXAMPLES.md#discovery-cache) | Control caching of OIDC discovery metadata and JWKS |
 
 ## Getting Started
 

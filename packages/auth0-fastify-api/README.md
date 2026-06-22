@@ -4,12 +4,28 @@ The Auth0 Fastify-API SDK is a library for protecting API's in Fastify applicati
 ![Downloads](https://img.shields.io/npm/dw/@auth0/auth0-fastify-api)
 [![License](https://img.shields.io/:license-mit-blue.svg?style=flat)](https://opensource.org/licenses/MIT)
 
-📚 [Documentation](#documentation) - 🚀 [Getting Started](#getting-started) - 💬 [Feedback](#feedback)
+📚 [Documentation](#documentation) - 🔎 [Features](#features) - 🚀 [Getting Started](#getting-started) - 💬 [Feedback](#feedback)
 
 ## Documentation
 
 - [Examples](https://github.com/auth0/auth0-fastify/blob/main/packages/auth0-fastify-api/EXAMPLES.md) - examples for your different use cases.
 - [Docs Site](https://auth0.com/docs) - explore our docs site and learn more about Auth0.
+
+## Features
+
+Jump straight to the capability you need.
+
+| Feature | What it does |
+| --- | --- |
+| [Quick start](#getting-started) | Protect an API with `fastify.register` in a few lines |
+| [Protect an API route (`requireAuth`)](#protecting-api-routes) | Require a valid bearer access token in a preHandler |
+| [Read token claims (`request.user`)](#protecting-api-routes) | Access claims extracted from the verified token |
+| [Custom token / user type](#protecting-api-routes) | Type your custom claims via module augmentation |
+| [DPoP (proof-of-possession)](./EXAMPLES.md#dpop-demonstration-of-proof-of-possession) | Bind access tokens to a client key pair (RFC 9449) |
+| [On-Behalf-Of Token Exchange](#on-behalf-of-token-exchange) | Exchange the caller's token for a downstream API token |
+| [Multiple Custom Domains (MCD)](./EXAMPLES.md#multiple-custom-domains-mcd) | Accept tokens from multiple issuer domains of one tenant |
+| [Custom `fetch`](./EXAMPLES.md#configuring-a-customfetch-implementation) | Swap in your own fetch (proxies, retries, instrumentation) |
+| [Discovery cache](./EXAMPLES.md#discovery-cache-configuration) | Control caching of discovery metadata and signing keys |
 
 ## Getting Started
 
