@@ -11,6 +11,7 @@
   - [Performing a delegation exchange without a session](#performing-a-delegation-exchange-without-a-session)
   - [Using actor tokens for delegation](#using-actor-tokens-for-delegation)
   - [Authenticating within an organization](#authenticating-within-an-organization)
+- [Dynamic Application Base URL](#dynamic-application-base-url)
 - [Multiple Custom Domains (MCD)](#multiple-custom-domains-mcd)
 
 ## Configuration
@@ -273,6 +274,66 @@ fastify.post('/custom-token-exchange', async (request, reply) => {
 });
 ```
 
+## Dynamic Application Base URL
+
+`appBaseUrl` controls the origin used to build `redirect_uri` and
+`post_logout_redirect_uri`. It accepts three forms:
+
+- **Static string** — a single fixed base URL (the common case):
+
+  ```ts
+  fastify.register(fastifyAuth0, {
+    domain: '<AUTH0_DOMAIN>',
+    clientId: '<AUTH0_CLIENT_ID>',
+    clientSecret: '<AUTH0_CLIENT_SECRET>',
+    sessionSecret: '<SESSION_SECRET>',
+    appBaseUrl: 'https://my-app.com',
+  });
+  ```
+
+- **Allow-list (array)** — the base URL is inferred per request from
+  `request.host`/`request.protocol`, but the inferred origin must match one of
+  the listed origins, otherwise the request is rejected with HTTP 500:
+
+  ```ts
+  fastify.register(fastifyAuth0, {
+    domain: '<AUTH0_DOMAIN>',
+    clientId: '<AUTH0_CLIENT_ID>',
+    clientSecret: '<AUTH0_CLIENT_SECRET>',
+    sessionSecret: '<SESSION_SECRET>',
+    appBaseUrl: ['https://brand-1.my-app.com', 'https://brand-2.my-app.com'],
+  });
+  ```
+
+- **Omitted** — the base URL is inferred per request with no restriction. Make
+  sure every inferred origin is registered in Auth0 as an `Allowed Callback URL`
+  and `Allowed Logout URL`.
+
+Dynamic and allow-list modes work with both a static string `domain` and a
+`DomainResolver` (see [Multiple Custom Domains](#multiple-custom-domains-mcd)).
+
+### Trusting forwarded headers
+
+When `appBaseUrl` is omitted or an array, the base URL is derived from Fastify's
+`request.host` and `request.protocol`. Behind a proxy, enable Fastify's
+[`trustProxy`](https://fastify.dev/docs/latest/Reference/Server/#trustproxy) so
+these reflect the `X-Forwarded-Host`/`X-Forwarded-Proto` headers your proxy
+sets:
+
+```ts
+const fastify = Fastify({ trustProxy: true });
+```
+
+Your proxy must sanitize and overwrite `Host` and `X-Forwarded-Host` before they
+reach the app. Without a trusted proxy validating these headers, an attacker can
+influence the inferred base URL and cause malicious redirects.
+
+### Secure session cookies
+
+In dynamic and allow-list modes, session cookies default to `secure: true`.
+Setting `secure: false` while `NODE_ENV === 'production'` throws
+`InvalidConfigurationError` to prevent an accidental downgrade.
+
 ## Multiple Custom Domains (MCD)
 
 `Multiple Custom Domains` (MCD) lets you resolve the Auth0 domain per request while using a single Fastify plugin instance. This is useful when one application serves multiple customer domains (for example, `brand-1.my-app.com` and `brand-2.my-app.com`), each mapped to a different `Auth0` custom domain.
@@ -335,10 +396,9 @@ const domainResolver: DomainResolver<StoreOptions> = (storeOptions) => {
 Resolver mode means `domain` is configured as a resolver function. The plugin then passes per-request `storeOptions` into the underlying `ServerClient` so it can choose the correct `Auth0` domain for the current request.
 - When you use the mounted routes, `{ request, reply }` is passed automatically.
 - If you call `fastify.auth0Client` directly from your own routes, continue to pass `{ request, reply }` to those methods.
-- If `appBaseUrl` is provided, that static value is used for callback and logout URLs.
-- If `appBaseUrl` is omitted, the SDK infers the base URL from request headers.
-
-If you omit `appBaseUrl`, make sure every inferred origin is registered in Auth0 as an `Allowed Callback URL` and `Allowed Logout URL`.
+- `appBaseUrl` behaves the same as documented in
+  [Dynamic Application Base URL](#dynamic-application-base-url): provide a static
+  string, an allow-list array, or omit it to infer per request.
 
 
 

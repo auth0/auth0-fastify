@@ -3,7 +3,7 @@ import { setupServer } from 'msw/node';
 import { http, HttpResponse } from 'msw';
 import { generateToken } from './test-utils/tokens.js';
 import Fastify from 'fastify';
-import plugin from './index.js';
+import plugin, { InvalidConfigurationError } from './index.js';
 import { StateData } from '@auth0/auth0-server-js';
 import { decrypt, encrypt } from './test-utils/encryption.js';
 
@@ -118,7 +118,7 @@ test('auth/login redirects to authorize when not using a root appBaseUrl', async
 });
 
 test('auth/login infers appBaseUrl from request when using a domain resolver', async () => {
-  const fastify = Fastify();
+  const fastify = Fastify({ trustProxy: true });
   fastify.register(plugin, {
     domain: async () => domain,
     clientId: '<client_id>',
@@ -142,7 +142,7 @@ test('auth/login infers appBaseUrl from request when using a domain resolver', a
 });
 
 test('auth/login prefers forwarded host/proto when inferring appBaseUrl', async () => {
-  const fastify = Fastify();
+  const fastify = Fastify({ trustProxy: true });
   fastify.register(plugin, {
     domain: async () => domain,
     clientId: '<client_id>',
@@ -165,29 +165,8 @@ test('auth/login prefers forwarded host/proto when inferring appBaseUrl', async 
   expect(url.searchParams.get('redirect_uri')).toBe('https://public.example.com/auth/callback');
 });
 
-test('auth/login fails when appBaseUrl cannot be inferred', async () => {
-  const fastify = Fastify();
-  fastify.register(plugin, {
-    domain: async () => domain,
-    clientId: '<client_id>',
-    clientSecret: '<client_secret>',
-    sessionSecret: '<secret>',
-  });
-
-  const res = await fastify.inject({
-    method: 'GET',
-    url: '/auth/login',
-    headers: {
-      host: '',
-      'x-forwarded-proto': '',
-    },
-  });
-
-  expect(res.statusCode).toBe(500);
-});
-
 test('auth/logout infers appBaseUrl from request when using a domain resolver', async () => {
-  const fastify = Fastify();
+  const fastify = Fastify({ trustProxy: true });
   fastify.register(plugin, {
     domain: async () => domain,
     clientId: '<client_id>',
@@ -211,17 +190,73 @@ test('auth/logout infers appBaseUrl from request when using a domain resolver', 
   expect(returnTo).toBe('https://app.example.com');
 });
 
-test('requires appBaseUrl when using a static domain', async () => {
-  const fastify = Fastify();
+test('infers appBaseUrl for a static domain when appBaseUrl is omitted', async () => {
+  const fastify = Fastify({ trustProxy: true });
   fastify.register(plugin, {
-    // @ts-expect-error appBaseUrl required for static domain
     domain: domain,
     clientId: '<client_id>',
     clientSecret: '<client_secret>',
     sessionSecret: '<secret>',
   });
 
-  await expect(fastify.ready()).rejects.toThrowError('appBaseUrl is required when domain is a string.');
+  const res = await fastify.inject({
+    method: 'GET',
+    url: '/auth/login',
+    headers: {
+      host: 'app.example.com',
+      'x-forwarded-proto': 'https',
+    },
+  });
+  const url = new URL(res.headers['location']?.toString() ?? '');
+
+  expect(res.statusCode).toBe(302);
+  expect(url.searchParams.get('redirect_uri')).toBe('https://app.example.com/auth/callback');
+});
+
+test('auth/login infers appBaseUrl from an allow-list when the origin matches', async () => {
+  const fastify = Fastify({ trustProxy: true });
+  fastify.register(plugin, {
+    domain: domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    appBaseUrl: ['https://app.example.com', 'https://other.example.com'],
+    sessionSecret: '<secret>',
+  });
+
+  const res = await fastify.inject({
+    method: 'GET',
+    url: '/auth/login',
+    headers: {
+      host: 'other.example.com',
+      'x-forwarded-proto': 'https',
+    },
+  });
+  const url = new URL(res.headers['location']?.toString() ?? '');
+
+  expect(res.statusCode).toBe(302);
+  expect(url.searchParams.get('redirect_uri')).toBe('https://other.example.com/auth/callback');
+});
+
+test('auth/login returns 500 when the inferred origin is not in the allow-list', async () => {
+  const fastify = Fastify({ trustProxy: true });
+  fastify.register(plugin, {
+    domain: domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    appBaseUrl: ['https://app.example.com'],
+    sessionSecret: '<secret>',
+  });
+
+  const res = await fastify.inject({
+    method: 'GET',
+    url: '/auth/login',
+    headers: {
+      host: 'evil.example.com',
+      'x-forwarded-proto': 'https',
+    },
+  });
+
+  expect(res.statusCode).toBe(500);
 });
 
 test('auth/login should put the appState in the transaction store', async () => {
@@ -1464,4 +1499,23 @@ test('customTokenExchange forwards the organization to the token endpoint', asyn
 
   expect(res.statusCode).toBe(200);
   expect(capturedOrganization).toBe('org_123');
+});
+
+test('rejects insecure session cookies in production when appBaseUrl is dynamic', async () => {
+  const previous = process.env.NODE_ENV;
+  process.env.NODE_ENV = 'production';
+  try {
+    const fastify = Fastify({ trustProxy: true });
+    fastify.register(plugin, {
+      domain: domain,
+      clientId: '<client_id>',
+      clientSecret: '<client_secret>',
+      sessionSecret: '<secret>',
+      sessionConfiguration: { cookie: { secure: false } },
+    });
+
+    await expect(fastify.ready()).rejects.toThrowError(InvalidConfigurationError);
+  } finally {
+    process.env.NODE_ENV = previous;
+  }
 });
