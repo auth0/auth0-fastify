@@ -1,5 +1,15 @@
 # Change Log
 
+## [v1.5.0](https://github.com/auth0/auth0-fastify/tree/auth0-fastify-v1.5.0) (2026-07-07)
+[Full Changelog](https://github.com/auth0/auth0-fastify/compare/auth0-fastify-v1.4.0...auth0-fastify-v1.5.0)
+
+**Added**
+- feat(auth0-fastify): bump @auth0/auth0-server-js to ^1.9.0 [\#86](https://github.com/auth0/auth0-fastify/pull/86) ([@nandan-bhat](https://github.com/nandan-bhat))
+
+**Fixed**
+- docs: add features to READMEs [\#82](https://github.com/auth0/auth0-fastify/pull/82) ([@frederikprijck](https://github.com/frederikprijck))
+
+
 ## [v1.4.0](https://github.com/auth0/auth0-fastify/tree/auth0-fastify-v1.4.0) (2026-06-17)
 [Full Changelog](https://github.com/auth0/auth0-fastify/compare/auth0-fastify-v1.3.0...auth0-fastify-v1.4.0)
 
