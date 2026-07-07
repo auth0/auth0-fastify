@@ -1431,7 +1431,9 @@ test('customTokenExchange forwards the organization to the token endpoint', asyn
       capturedOrganization = info.get('organization') as string;
       return HttpResponse.json({
         access_token: accessToken,
-        id_token: await generateToken(domain, 'user_123', '<client_id>'),
+        id_token: await generateToken(domain, 'user_123', '<client_id>', undefined, undefined, undefined, {
+          org_id: 'org_123',
+        }),
         expires_in: 60,
         token_type: 'Bearer',
       });
