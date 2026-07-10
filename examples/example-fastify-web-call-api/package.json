@@ -1,0 +1,23 @@
+{
+    "name": "example-fastify-web-call-api",
+    "version": "1.0.0",
+    "description": "",
+    "type": "module",
+    "scripts": {
+        "start": "tsx src/index.ts --project tsconfig.json",
+        "build": "tsc --project tsconfig.json"
+    },
+    "devDependencies": {
+        "@types/ejs": "^3.1.5",
+        "tsx": "^4.19.2",
+        "typescript": "~5.8.2"
+    },
+    "dependencies": {
+        "@auth0/auth0-fastify": "*",
+        "@fastify/static": "^9.1.1",
+        "@fastify/view": "^10.0.2",
+        "dotenv": "^16.4.7",
+        "ejs": "^3.1.10",
+        "fastify": "^5.2.1"
+    }
+}

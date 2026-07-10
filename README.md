@@ -54,6 +54,7 @@ Jump straight to the capability you need.
 The following examples can be found in the examples directory:
 
 - [Fastify Web App Example](./examples/example-fastify-web/README.md)
+- [Fastify Web App Calling an API Example](./examples/example-fastify-web-call-api/README.md)
 - [Fastify API Example](./examples/example-fastify-api/README.md)
 
 Before running the examples, you need to install the dependencies for the monorepo and build all the packages.
