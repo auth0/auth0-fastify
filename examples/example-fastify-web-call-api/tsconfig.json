@@ -17,5 +17,6 @@
     "target": "ES2022",
     "outDir": "dist",
     "rootDir": "src"
-  }
+  },
+  "exclude": ["dist", "**/*.spec.ts"]
 }
