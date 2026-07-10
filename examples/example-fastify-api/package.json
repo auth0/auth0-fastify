@@ -4,7 +4,8 @@
     "description": "",
     "type": "module",
     "scripts": {
-        "start": "tsx src/index.ts --project tsconfig.json"
+        "start": "tsx src/index.ts --project tsconfig.json",
+        "build": "tsc --project tsconfig.json"
     },
     "devDependencies": {
         "ts-node": "^10.9.2",
