@@ -62,7 +62,7 @@ export function buildApp() {
     const session = await fastify.auth0Client!.getSession({ request, reply });
 
     if (!session) {
-      reply.redirect(`/auth/login?returnTo=${request.url}`);
+      return reply.redirect(`/auth/login?returnTo=${encodeURIComponent(request.url)}`);
     }
   }
 
