@@ -23,6 +23,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js with npm caching
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -43,6 +45,37 @@ jobs:
 
       - name: Build example-fastify-web
         run: npm run build -w example-fastify-web
+
+  example-fastify-web-dynamic:
+    name: Dynamic Application Base URL
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node.js with npm caching
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Update npm
+        run: npm install -g npm@11.10.0
+
+      - name: Install dependencies
+        run: npm install
+
+      # The example imports @auth0/auth0-fastify from its built dist, so the
+      # SDK must be built before the example can build.
+      - name: Build auth0-fastify
+        run: npm run build -w @auth0/auth0-fastify
+
+      - name: Build example-fastify-web-dynamic
+        run: npm run build -w example-fastify-web-dynamic
+
+      - name: Test example-fastify-web-dynamic
+        run: npm run test:ci -w example-fastify-web-dynamic
 
   example-fastify-api:
     name: API

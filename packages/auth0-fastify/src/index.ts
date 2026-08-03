@@ -13,6 +13,8 @@ import type { DomainResolver } from '@auth0/auth0-server-js';
 import type { DiscoveryCacheOptions, SessionConfiguration, SessionStore, StoreOptions } from './types.js';
 import { createRouteUrl, toSafeRedirect } from './utils.js';
 import { FastifyCookieHandler } from './store/fastify-cookie-handler.js';
+import { normalizeAppBaseUrl, resolveAppBaseUrl, resolveSecureCookie } from './app-base-url.js';
+import { InvalidConfigurationError } from './errors/index.js';
 
 export * from './types.js';
 export type { DomainResolver } from '@auth0/auth0-server-js';
@@ -25,6 +27,7 @@ export type {
 } from '@auth0/auth0-server-js';
 export { CookieTransactionStore } from '@auth0/auth0-server-js';
 export { TokenExchangeError, MissingClientAuthError } from '@auth0/auth0-server-js';
+export { InvalidConfigurationError } from './errors/index.js';
 
 declare module 'fastify' {
   /**
@@ -48,38 +51,6 @@ declare module 'fastify' {
     auth0Client: ServerClient<StoreOptions<RawServer, RawRequest, RawReply>> | undefined;
   }
 }
-
-const assertAppBaseUrl = (value: string): string => {
-  try {
-    new URL(value);
-  } catch {
-    throw new Error('appBaseUrl must be an absolute URL.');
-  }
-  return value;
-};
-
-const getHeaderValue = (value: string | string[] | undefined): string | undefined =>
-  Array.isArray(value) ? value[0] : value;
-
-const inferAppBaseUrlFromRequest = <
-  RawServer extends RawServerBase = RawServerDefault,
-  RawRequest extends RawRequestDefaultExpression<RawServer> = RawRequestDefaultExpression<RawServer>
->(
-  request: FastifyRequest<RouteGenericInterface, RawServer, RawRequest>
-): string => {
-  const hostHeader = getHeaderValue(request.headers['x-forwarded-host']) ?? getHeaderValue(request.headers.host);
-  if (!hostHeader) {
-    throw new Error('Unable to infer appBaseUrl: missing host header.');
-  }
-
-  const forwardedProto = getHeaderValue(request.headers['x-forwarded-proto']);
-  const protocol = (forwardedProto ?? request.protocol).toString().split(',')[0]?.trim();
-  if (!protocol) {
-    throw new Error('Unable to infer appBaseUrl: missing protocol.');
-  }
-
-  return assertAppBaseUrl(`${protocol}://${hostHeader}`);
-};
 
 type Auth0FastifyCommonOptions<
   RawServer extends RawServerBase = RawServerDefault,
@@ -133,23 +104,22 @@ export type Auth0FastifyOptions<
   RawServer extends RawServerBase = RawServerDefault,
   RawRequest extends RawRequestDefaultExpression<RawServer> = RawRequestDefaultExpression<RawServer>,
   RawReply extends RawReplyDefaultExpression<RawServer> = RawReplyDefaultExpression<RawServer>
-> =
-  | (Auth0FastifyCommonOptions<RawServer, RawRequest, RawReply> & {
-      domain: string;
-      /**
-       * The base URL of the application used for redirects and callbacks.
-       * Required when using a static domain.
-       */
-      appBaseUrl: string;
-    })
-  | (Auth0FastifyCommonOptions<RawServer, RawRequest, RawReply> & {
-      domain: DomainResolver<StoreOptions<RawServer, RawRequest, RawReply>>;
-      /**
-       * Optional base URL used for redirects and callbacks.
-       * When omitted, the base URL is inferred from the request host/proto.
-       */
-      appBaseUrl?: string;
-    });
+> = Auth0FastifyCommonOptions<RawServer, RawRequest, RawReply> & {
+  domain: string | DomainResolver<StoreOptions<RawServer, RawRequest, RawReply>>;
+  /**
+   * The base URL(s) of the application, used for redirects and callbacks.
+   *
+   * - `string`: a static base URL (existing behavior).
+   * - `string[]`: an allow-list. The base URL is inferred per request and must
+   *   match one of these origins, otherwise the request is rejected with HTTP 500.
+   * - omitted: inferred per request from `request.host`/`request.protocol`.
+   *
+   * When omitted or an array and running behind a proxy, configure Fastify's
+   * `trustProxy` so `request.host`/`request.protocol` are derived from the
+   * forwarded headers your proxy sets.
+   */
+  appBaseUrl?: string | string[];
+};
 
 export default fp(async function auth0Fastify<
   RawServer extends RawServerBase = RawServerDefault,
@@ -160,17 +130,34 @@ export default fp(async function auth0Fastify<
   options: Auth0FastifyOptions<RawServer, RawRequest, RawReply>
 ) {
   const callbackPath = options.routes?.callback ?? '/auth/callback';
-  const staticAppBaseUrl = options.appBaseUrl ? assertAppBaseUrl(options.appBaseUrl) : undefined;
-  if (typeof options.domain === 'string' && !staticAppBaseUrl) {
-    throw new Error('appBaseUrl is required when domain is a string.');
-  }
-  const staticRedirectUri = staticAppBaseUrl ? createRouteUrl(callbackPath, staticAppBaseUrl) : undefined;
+  const appBaseUrlConfig = normalizeAppBaseUrl(options.appBaseUrl);
+  const staticRedirectUri =
+    appBaseUrlConfig.mode === 'static' ? createRouteUrl(callbackPath, appBaseUrlConfig.value) : undefined;
 
-  const resolveAppBaseUrl = (request: FastifyRequest<RouteGenericInterface, RawServer, RawRequest>): string => {
-    if (staticAppBaseUrl) {
-      return staticAppBaseUrl;
+  const isProduction = process.env.NODE_ENV === 'production';
+  const resolvedSecure = resolveSecureCookie(
+    appBaseUrlConfig,
+    options.sessionConfiguration?.cookie?.secure,
+    isProduction
+  );
+
+  const resolveBaseUrl = (request: FastifyRequest<RouteGenericInterface, RawServer, RawRequest>): string =>
+    resolveAppBaseUrl(appBaseUrlConfig, request);
+
+  const resolveOr500 = (
+    request: FastifyRequest<RouteGenericInterface, RawServer, RawRequest>,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    reply: any
+  ): string | undefined => {
+    try {
+      return resolveBaseUrl(request);
+    } catch (e) {
+      if (e instanceof InvalidConfigurationError) {
+        reply.code(500).send(e.message);
+        return undefined;
+      }
+      throw e;
     }
-    return inferAppBaseUrlFromRequest(request);
   };
 
   const auth0Client = new ServerClient<StoreOptions<RawServer, RawRequest, RawReply>>({
@@ -192,6 +179,7 @@ export default fp(async function auth0Fastify<
       ? new StatefulStateStore(
           {
             ...options.sessionConfiguration,
+            cookie: { ...options.sessionConfiguration?.cookie, secure: resolvedSecure },
             secret: options.sessionSecret,
             store: options.sessionStore,
           },
@@ -200,6 +188,7 @@ export default fp(async function auth0Fastify<
       : new StatelessStateStore(
           {
             ...options.sessionConfiguration,
+            cookie: { ...options.sessionConfiguration?.cookie, secure: resolvedSecure },
             secret: options.sessionSecret,
           },
           new FastifyCookieHandler<RawServer, RawRequest, RawReply>()
@@ -227,7 +216,8 @@ export default fp(async function auth0Fastify<
         >,
         reply
       ) => {
-        const appBaseUrl = resolveAppBaseUrl(request);
+        const appBaseUrl = resolveOr500(request, reply);
+        if (!appBaseUrl) return;
         const dangerousReturnTo = request.query.returnTo;
         const sanitizedReturnTo = toSafeRedirect(dangerousReturnTo || '/', appBaseUrl);
         const redirectUri = createRouteUrl(callbackPath, appBaseUrl);
@@ -248,7 +238,8 @@ export default fp(async function auth0Fastify<
     );
 
     fastify.get(options.routes?.callback ?? '/auth/callback', async (request, reply) => {
-      const appBaseUrl = resolveAppBaseUrl(request);
+      const appBaseUrl = resolveOr500(request, reply);
+      if (!appBaseUrl) return;
       const { appState } = await auth0Client.completeInteractiveLogin<{ returnTo: string } | undefined>(
         createRouteUrl(request.url, appBaseUrl),
         { request, reply }
@@ -258,7 +249,8 @@ export default fp(async function auth0Fastify<
     });
 
     fastify.get(options.routes?.logout ?? '/auth/logout', async (request, reply) => {
-      const appBaseUrl = resolveAppBaseUrl(request);
+      const appBaseUrl = resolveOr500(request, reply);
+      if (!appBaseUrl) return;
       const logoutUrl = await auth0Client.logout({ returnTo: appBaseUrl.toString() }, { request, reply });
 
       reply.redirect(logoutUrl.href);
@@ -318,7 +310,8 @@ export default fp(async function auth0Fastify<
             });
           }
 
-          const appBaseUrl = resolveAppBaseUrl(request);
+          const appBaseUrl = resolveOr500(request, reply);
+          if (!appBaseUrl) return;
           const sanitizedReturnTo = toSafeRedirect(dangerousReturnTo || '/', appBaseUrl);
           const callbackPath = options.routes?.connectCallback ?? '/auth/connect/callback';
           const redirectUri = createRouteUrl(callbackPath, appBaseUrl);
@@ -341,7 +334,8 @@ export default fp(async function auth0Fastify<
       );
 
       fastify.get(options.routes?.connectCallback ?? '/auth/connect/callback', async (request, reply) => {
-        const appBaseUrl = resolveAppBaseUrl(request);
+        const appBaseUrl = resolveOr500(request, reply);
+        if (!appBaseUrl) return;
         const { appState } = await fastify.auth0Client!.completeLinkUser<{ returnTo: string }>(
           createRouteUrl(request.url, appBaseUrl),
           {
@@ -375,7 +369,8 @@ export default fp(async function auth0Fastify<
             });
           }
 
-          const appBaseUrl = resolveAppBaseUrl(request);
+          const appBaseUrl = resolveOr500(request, reply);
+          if (!appBaseUrl) return;
           const sanitizedReturnTo = toSafeRedirect(dangerousReturnTo || '/', appBaseUrl);
           const callbackPath = options.routes?.unconnectCallback ?? '/auth/unconnect/callback';
           const redirectUri = createRouteUrl(callbackPath, appBaseUrl);
@@ -397,7 +392,8 @@ export default fp(async function auth0Fastify<
       );
 
       fastify.get(options.routes?.unconnectCallback ?? '/auth/unconnect/callback', async (request, reply) => {
-        const appBaseUrl = resolveAppBaseUrl(request);
+        const appBaseUrl = resolveOr500(request, reply);
+        if (!appBaseUrl) return;
         const { appState } = await fastify.auth0Client!.completeUnlinkUser<{ returnTo: string }>(
           createRouteUrl(request.url, appBaseUrl),
           {

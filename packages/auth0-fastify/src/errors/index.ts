@@ -6,3 +6,12 @@ export class MissingStoreOptionsError extends Error {
     this.name = 'MissingStoreOptionsError';
   }
 }
+
+export class InvalidConfigurationError extends Error {
+  public code: string = 'invalid_configuration_error';
+
+  constructor(message?: string) {
+    super(message ?? 'The provided configuration is invalid.');
+    this.name = 'InvalidConfigurationError';
+  }
+}
