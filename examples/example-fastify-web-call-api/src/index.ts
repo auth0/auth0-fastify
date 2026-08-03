@@ -130,7 +130,9 @@ export function buildApp() {
 const start = async () => {
   const fastify = buildApp();
   try {
-    await fastify.listen({ port: 3000 });
+    // Defaults to 3000; set PORT to run on another port.
+    const port = Number(process.env.PORT ?? 3000);
+    await fastify.listen({ port });
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);
