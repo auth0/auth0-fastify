@@ -43,7 +43,10 @@ fastify.register(() => {
 
 const start = async () => {
   try {
-    await fastify.listen({ port: 3000 });
+    // Defaults to 3000; set PORT to run on another port (e.g. 3001 when running
+    // alongside the example-fastify-web-call-api web app).
+    const port = Number(process.env.PORT ?? 3000);
+    await fastify.listen({ port });
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);

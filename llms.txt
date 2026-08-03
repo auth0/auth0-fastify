@@ -13,6 +13,7 @@
 
 - [Monorepo README](./README.md): Overview, package list, and how to install/build the workspace (`npm install`, `npm run build`) and run the examples.
 - [Fastify web app example](./examples/example-fastify-web/README.md): Runnable server-rendered web app using `@auth0/auth0-fastify`.
+- [Fastify web app calling an API example](./examples/example-fastify-web-call-api/README.md): Runnable web app that logs a user in and calls a resource server (`example-fastify-api`) on their behalf using `getAccessToken()`.
 - [Fastify API example](./examples/example-fastify-api/README.md): Runnable protected API using `@auth0/auth0-fastify-api`.
 
 ## Development
