@@ -25,6 +25,7 @@ Jump straight to the capability you need.
 | [Get the current session / user](#4-protecting-routes) | Read the authenticated user with `getUser()` / `getSession()` |
 | [Call an API (`getAccessToken`)](#requesting-an-access-token-to-call-an-api) | Get an access token to call APIs as the user |
 | [Custom Token Exchange](./EXAMPLES.md#login-using-custom-token-exchange) | Create a session from an external token without a browser login |
+| [Impersonation via Session Transfer](./EXAMPLES.md#impersonation-via-session-transfer) | Log an agent into another app as a customer, audited via the `act` claim |
 | [Multiple Custom Domains (MCD)](./EXAMPLES.md#multiple-custom-domains-mcd) | Resolve the Auth0 domain per request |
 | [Custom `fetch`](./EXAMPLES.md#configuring-a-customfetch-implementation) | Swap in your own fetch (proxies, retries, instrumentation) |
 | [Discovery cache](./EXAMPLES.md#discovery-cache) | Control caching of OIDC discovery metadata and JWKS |
@@ -78,7 +79,7 @@ The `APP_BASE_URL` is the URL that your application is running on. When developi
 
 The SDK for Fastify Web Applications mounts 4 main routes:
 
-1. `/auth/login`: the login route that the user will be redirected to to initiate an authentication transaction. Supports adding a `returnTo` querystring parameter to return to a specific URL after login.
+1. `/auth/login`: the login route that the user will be redirected to to initiate an authentication transaction. Supports adding a `returnTo` querystring parameter to return to a specific URL after login. It also forwards a `session_transfer_token` querystring parameter (and `organization`, when present) to Auth0, so this route doubles as the redemption endpoint for [Impersonation via Session Transfer](./EXAMPLES.md#impersonation-via-session-transfer).
 2. `/auth/logout`: the logout route that must be added to your Auth0 application's Allowed Logout URLs
 3. `/auth/callback`: the callback route that must be added to your Auth0 application's Allowed Callback URLs
 4. `/auth/backchannel-logout`: the route that will receive a `logout_token` when a configured [Back-Channel Logout](https://auth0.com/docs/authenticate/login/logout/back-channel-logout) initiator occurs
