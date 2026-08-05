@@ -296,7 +296,7 @@ The STT is **opaque, single-use, and short-lived (~60s)**. The SDK requests it, 
 > - The **initiator client** needs `token_exchange.allow_any_profile_of_type: ["custom_authentication"]` and `session_transfer.can_create_session_transfer_token: true`.
 > - The **target client** needs `session_transfer.delegation.allow_delegated_access: true`, `session_transfer.allowed_authentication_methods` including `"query"`, and a device-binding mode via `session_transfer.delegation.enforce_device_binding` (`"ip"` by default).
 > - A **Custom Token Exchange Action** must validate your `subject_token`, call `setUserById()` for the customer, and call `setActor()` for the agent. An STT is only issued when an actor is set.
-> - The target app needs a **non-localhost callback URL** registered. STT redemption rejects `localhost` redirect URIs, so use a real domain or a tunnel during development.
+> - The target app needs a **non-localhost callback URL** registered. STT redemption rejects `localhost` redirect URIs, so use a real domain or a tunnel during development. This is about the app's registered OAuth callback URL, which is a tenant setting. It is not about `targetLoginUrl`, where the SDK does allow `http://localhost` so you can point at a local target app.
 >
 > See the [Custom Token Exchange documentation](https://auth0.com/docs/authenticate/custom-token-exchange) for the full setup.
 
@@ -389,7 +389,7 @@ The STT itself is **never persisted**. It is not written to the session or the t
 
 ### Target: redeeming the Session Transfer Token
 
-On the target app, the STT is redeemed as part of a **standard authorization code login**. The mounted `/auth/login` route does this for you: when a request arrives carrying `session_transfer_token`, the plugin forwards it (and `organization`, when present) to `/authorize`.
+On the target app, the STT is redeemed as part of a **standard authorization code login**. The mounted `/auth/login` route does this for you: when a request arrives carrying `session_transfer_token`, the plugin forwards it to `/authorize`, together with `organization` when that parameter came along with the STT.
 
 So for the common case the target app needs **no extra code at all**. Register the plugin as usual and point the initiator at the target's login route:
 
@@ -409,18 +409,30 @@ fastify.register(fastifyAuth0, {
 
 `returnTo` keeps working alongside an STT, so you can land the impersonated session on a specific page:
 
-```
+```text
 https://app.example.com/auth/login?session_transfer_token=<STT>&returnTo=/orders/4821
 ```
 
-If you run with `mountRoutes: false` and own your login route, forward the parameter yourself through `authorizationParams`:
+If you run with `mountRoutes: false` and own your login route, forward the parameter yourself through `authorizationParams`. Mirror what the mounted route does: take the first value when a key is repeated, treat a blank value as absent, and only honour `organization` when an STT is present:
 
 ```ts
+// Fastify parses a repeated query key into an array, so narrow to a single usable value.
+const getQueryValue = (value: string | string[] | undefined): string | undefined => {
+  const first = Array.isArray(value) ? value[0] : value;
+  const trimmed = first?.trim();
+  return trimmed ? trimmed : undefined;
+};
+
 fastify.get('/auth/login', async (request, reply) => {
-  const { session_transfer_token: sessionTransferToken, organization } = request.query as {
-    session_transfer_token?: string;
-    organization?: string;
+  const query = request.query as {
+    session_transfer_token?: string | string[];
+    organization?: string | string[];
   };
+
+  const sessionTransferToken = getQueryValue(query.session_transfer_token);
+  // Only honour `organization` alongside an STT, which is the pair
+  // `buildSessionTransferRedirect` emits. That keeps a plain login unchanged.
+  const organization = sessionTransferToken ? getQueryValue(query.organization) : undefined;
 
   const authorizationUrl = await fastify.auth0Client!.startInteractiveLogin(
     {
@@ -442,9 +454,8 @@ fastify.get('/auth/login', async (request, reply) => {
 
 > [!NOTE]
 > The `session_transfer_token` is redeemed as a **query** parameter, so the target client's `session_transfer.allowed_authentication_methods` must include `"query"`. The resulting session is short-lived (hard-capped at 2 hours) and **cannot mint a refresh token**. To continue past that, run the whole flow again.
-
-> [!NOTE]
-> Because the STT travels as a query parameter, it can land anywhere full URLs are retained: web server access logs, proxy and CDN logs, and browser history. This is inherent to the redemption mechanism. It is mitigated by the token being **single-use and short-lived (~60s)** and, when configured, **device-bound** through `enforce_device_binding`. A leaked STT is worthless once redeemed or expired. Even so, avoid logging redemption URLs verbatim, and never persist or forward the STT beyond the immediate redirect.
+>
+> Because the STT travels as a query parameter, it can land anywhere full URLs are retained: web server access logs, proxy and CDN logs, browser history, and the `Referer` header sent to third-party resources loaded by the redemption page. This is inherent to the redemption mechanism. It is mitigated by the token being **single-use and short-lived (~60s)** and, when configured, **device-bound** through `enforce_device_binding`. A leaked STT is worthless once redeemed or expired. Even so, avoid logging redemption URLs verbatim, and never persist or forward the STT beyond the immediate redirect.
 
 ### Reading the `act` claim on the impersonation session
 
@@ -469,7 +480,7 @@ The `act` claim is deliberately **not** on the `requestSessionTransferToken()` r
 
 ### Handling errors
 
-`requestSessionTransferToken()` throws `TokenExchangeError`. Only `actor_unavailable` is raised by the SDK itself, client-side and before any network call. The server-side conditions are surfaced through `cause`:
+`requestSessionTransferToken()` throws `TokenExchangeError` when the exchange itself fails. Only `actor_unavailable` is raised by the SDK itself, client-side and before any network call. The server-side conditions are surfaced through `cause`. Argument and configuration problems throw their own error classes instead, listed in the second table below:
 
 ```ts
 import { TokenExchangeError, TokenExchangeErrorCode } from '@auth0/auth0-fastify';
@@ -491,11 +502,15 @@ fastify.post('/impersonate', async (request, reply) => {
         return reply.code(401).send({ error: 'Log in again to impersonate.' });
       }
 
-      // Raised by Auth0 and surfaced through `cause`:
-      //   `setactor_required`          — your Action did not call setActor()
+      // Raised by Auth0 and surfaced through `cause`. Read `error_description` too: the
+      // server does not yet return a dedicated code for every condition, so some arrive as
+      // a generic `invalid_request` with the detail only in the description.
+      //   `setactor_required`          — your Action did not call setActor() (planned code)
       //   `session_transfer_disabled`  — the tenant feature flag is off
-      const serverError = (error.cause as { error?: string } | undefined)?.error;
-      return reply.code(400).send({ error: serverError ?? 'Session transfer failed.' });
+      const cause = error.cause as { error?: string; error_description?: string } | undefined;
+      return reply
+        .code(400)
+        .send({ error: cause?.error ?? 'Session transfer failed.', detail: cause?.error_description });
     }
 
     throw error;
@@ -503,13 +518,20 @@ fastify.post('/impersonate', async (request, reply) => {
 });
 ```
 
-The error codes map cleanly onto the setup steps, which makes them useful for diagnosis:
+The error codes map cleanly onto the setup steps, which makes them useful for diagnosis.
 
-| Error | What it means |
+These are `TokenExchangeError` codes, read from `error.code` or from `error.cause`:
+
+| Code | What it means |
 | --- | --- |
 | `actor_unavailable` | Raised by the SDK before any network call. No logged-in agent, no explicit `actor`, or an expired ID token with no refresh token. |
-| `setactor_required` | Your Custom Token Exchange Action did not call `setActor()`. |
+| `setactor_required` | Your Custom Token Exchange Action did not call `setActor()`. This is a planned code. Today the tenant returns `invalid_request` and says so in `error_description`, so match on the description as well. |
 | `session_transfer_disabled` | The `cte_session_transfer_token` feature flag is off on the tenant. |
+
+The rest are **separate error classes, not `TokenExchangeError`**, so a `catch` that only checks `instanceof TokenExchangeError` will let them through. All of them are raised by the SDK before any network call, so they show up while you are wiring the flow up rather than in production:
+
+| Error class | What it means |
+| --- | --- |
 | `InvalidConfigurationError` | The `targetLoginUrl` was relative, or used a scheme other than `https` on a non-loopback host. |
 | `MissingRequiredArgumentError` | `subjectToken`, `subjectTokenType`, or `targetLoginUrl` was missing or blank. |
 | `MissingClientAuthError` | No client credentials configured. An STT requires a confidential client. |

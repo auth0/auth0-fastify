@@ -79,7 +79,7 @@ The `APP_BASE_URL` is the URL that your application is running on. When developi
 
 The SDK for Fastify Web Applications mounts 4 main routes:
 
-1. `/auth/login`: the login route that the user will be redirected to to initiate an authentication transaction. Supports adding a `returnTo` querystring parameter to return to a specific URL after login. It also forwards a `session_transfer_token` querystring parameter (and `organization`, when present) to Auth0, so this route doubles as the redemption endpoint for [Impersonation via Session Transfer](./EXAMPLES.md#impersonation-via-session-transfer).
+1. `/auth/login`: the login route that the user will be redirected to to initiate an authentication transaction. Supports adding a `returnTo` querystring parameter to return to a specific URL after login. It also forwards a `session_transfer_token` querystring parameter to Auth0, along with `organization` when that parameter accompanies an STT, so this route doubles as the redemption endpoint for [Impersonation via Session Transfer](./EXAMPLES.md#impersonation-via-session-transfer).
 2. `/auth/logout`: the logout route that must be added to your Auth0 application's Allowed Logout URLs
 3. `/auth/callback`: the callback route that must be added to your Auth0 application's Allowed Callback URLs
 4. `/auth/backchannel-logout`: the route that will receive a `logout_token` when a configured [Back-Channel Logout](https://auth0.com/docs/authenticate/login/logout/back-channel-logout) initiator occurs

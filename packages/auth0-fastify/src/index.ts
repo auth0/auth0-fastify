@@ -15,6 +15,7 @@ import { createRouteUrl, toSafeRedirect } from './utils.js';
 import { FastifyCookieHandler } from './store/fastify-cookie-handler.js';
 
 export * from './types.js';
+export { MissingStoreOptionsError } from './errors/index.js';
 export type { DomainResolver } from '@auth0/auth0-server-js';
 export type {
   LoginWithCustomTokenExchangeOptions,
