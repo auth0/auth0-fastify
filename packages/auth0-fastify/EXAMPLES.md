@@ -11,6 +11,11 @@
   - [Performing a delegation exchange without a session](#performing-a-delegation-exchange-without-a-session)
   - [Using actor tokens for delegation](#using-actor-tokens-for-delegation)
   - [Authenticating within an organization](#authenticating-within-an-organization)
+- [Impersonation via Session Transfer](#impersonation-via-session-transfer)
+  - [Initiator: requesting a Session Transfer Token and redirecting](#initiator-requesting-a-session-transfer-token-and-redirecting)
+  - [Target: redeeming the Session Transfer Token](#target-redeeming-the-session-transfer-token)
+  - [Reading the `act` claim on the impersonation session](#reading-the-act-claim-on-the-impersonation-session)
+  - [Handling errors](#handling-errors)
 - [Multiple Custom Domains (MCD)](#multiple-custom-domains-mcd)
 
 ## Configuration
@@ -272,6 +277,265 @@ fastify.post('/custom-token-exchange', async (request, reply) => {
   return reply.send({ ok: true });
 });
 ```
+
+## Impersonation via Session Transfer
+
+Impersonation via Session Transfer builds on Custom Token Exchange and lets a support or admin application log an agent **into a target web application as a customer**. A support engineer can reproduce a customer's exact experience without ever knowing their password, and the agent is recorded in the `act` claim so every impersonation is auditable.
+
+There are two roles, usually two separate applications:
+
+- **Initiator** — your support/admin app. It requests a short-lived, single-use **Session Transfer Token (STT)** and redirects the agent's browser to the target app's login URL carrying the STT.
+- **Target** — the customer's own web app. Its login route forwards the STT to `/authorize`, where Auth0 redeems it and establishes an ephemeral, device-bound session **as the customer**.
+
+The STT is **opaque, single-use, and short-lived (~60s)**. The SDK requests it, hands it back, and helps you build the redirect. It never decodes, validates, caches, or persists it.
+
+> [!IMPORTANT]
+> This is a two-client, two-role flow. Both clients must live on the **same Auth0 tenant**, and the tenant settings below are configured out of band through the Management API or the Dashboard. They are not SDK code.
+>
+> - The tenant needs the `cte_session_transfer_token` feature flag enabled. Contact Auth0 support to turn it on.
+> - The **initiator client** needs `token_exchange.allow_any_profile_of_type: ["custom_authentication"]` and `session_transfer.can_create_session_transfer_token: true`.
+> - The **target client** needs `session_transfer.delegation.allow_delegated_access: true`, `session_transfer.allowed_authentication_methods` including `"query"`, and a device-binding mode via `session_transfer.delegation.enforce_device_binding` (`"ip"` by default).
+> - A **Custom Token Exchange Action** must validate your `subject_token`, call `setUserById()` for the customer, and call `setActor()` for the agent. An STT is only issued when an actor is set.
+> - The target app needs a **non-localhost callback URL** registered. STT redemption rejects `localhost` redirect URIs, so use a real domain or a tunnel during development. This is about the app's registered OAuth callback URL, which is a tenant setting. It is not about `targetLoginUrl`, where the SDK does allow `http://localhost` so you can point at a local target app.
+>
+> See the [Custom Token Exchange documentation](https://auth0.com/docs/authenticate/custom-token-exchange) for the full setup.
+
+### Initiator: requesting a Session Transfer Token and redirecting
+
+The plugin does not mount a route for this flow, in the same way it does not mount one for Custom Token Exchange. You call it from your own route using `fastify.auth0Client`.
+
+The agent must be **logged in** to the initiator app, because the SDK sources the actor from the agent's current session ID token by default. Run your own authorization check first (_is this agent allowed to impersonate this customer, right now?_), then call `requestSessionTransferToken()`:
+
+```ts
+fastify.post('/impersonate', { preHandler: hasSessionPreHandler }, async (request, reply) => {
+  const result = await fastify.auth0Client!.requestSessionTransferToken(
+    {
+      // Your own proof of which customer to impersonate, validated by your Action.
+      // The SDK never produces this. You supply it in whatever form your Action expects.
+      subjectToken: '<CUSTOMER_PROOF_TOKEN>',
+      subjectTokenType: 'urn:acme:customer-subject',
+      // Optional: forward custom context to your Action via `event.request.body`.
+      extra: { reason: 'Investigating TCK-4821' },
+    },
+    { request, reply }
+  );
+
+  // Build the redirect to the TARGET app's login URL, a trusted app-controlled value.
+  const url = fastify.auth0Client!.buildSessionTransferRedirect('https://app.example.com/auth/login', result);
+
+  return reply.redirect(url.href);
+});
+```
+
+Pass the store options (`{ request, reply }`) so the SDK can read the agent's session to source the actor.
+
+By default the actor is the agent session's ID token. To supply the acting party yourself, pass `actor`. This is the way to run the flow from a route with no agent session, for example a machine-to-machine job:
+
+```ts
+const result = await fastify.auth0Client!.requestSessionTransferToken(
+  {
+    subjectToken: '<CUSTOMER_PROOF_TOKEN>',
+    subjectTokenType: 'urn:acme:customer-subject',
+    actor: { token: '<AGENT_ID_TOKEN>' }, // `type` defaults to the ID token URN
+  },
+  { request, reply }
+);
+```
+
+If the customer belongs to an [organization](https://auth0.com/docs/manage-users/organizations), there is an `organization` on both calls. They do different things, so pick based on what you need:
+
+```ts
+const result = await fastify.auth0Client!.requestSessionTransferToken(
+  {
+    subjectToken: '<CUSTOMER_PROOF_TOKEN>',
+    subjectTokenType: 'urn:acme:customer-subject',
+    organization: '<ORGANIZATION_ID_OR_NAME>',
+  },
+  { request, reply }
+);
+
+const url = fastify.auth0Client!.buildSessionTransferRedirect('https://app.example.com/auth/login', result, {
+  organization: '<ORGANIZATION_ID_OR_NAME>',
+});
+```
+
+These are two separate parameters on two separate requests, and one does not imply the other:
+
+- On the mint, the tenant validates the organization against the client's organization settings while issuing the STT. An organization the client is not allowed to use fails at that call, instead of the STT being issued without it.
+- On the redirect, it is forwarded to the target's `/authorize` as part of a normal interactive login, the same as any other org-scoped login.
+
+The redirect one is what scopes the session the target ends up with. Passing `organization` only on the mint gets you the validation, but it does not org-scope the target's session, so pass it on the redirect as well when you need that.
+
+An `organization` the tenant rejects surfaces as a `TokenExchangeError`. A blank one throws `OrganizationValidationError` before the session is read or any network call is made.
+
+Branch on `result.issuedTokenType`, never on `result.tokenType`. For an STT the server returns `token_type: "N_A"`, which is informational only. A successful STT exchange always sets `issuedTokenType` to `urn:auth0:params:oauth:token-type:session_transfer_token`. The SDK surfaces exactly what the server returned rather than assuming the URN, so check it yourself before treating the result as an STT:
+
+```ts
+const STT_TOKEN_TYPE = 'urn:auth0:params:oauth:token-type:session_transfer_token';
+
+if (result.issuedTokenType !== STT_TOKEN_TYPE) {
+  // Not a session transfer token. Do not treat it as one.
+  throw new Error(`Unexpected issued token type: ${result.issuedTokenType}`);
+}
+```
+
+> [!IMPORTANT]
+> An **actor is mandatory** for an STT. That is what makes this auditable impersonation ("X acting as Y") rather than a silent account takeover. If you pass no explicit `actor` and no usable session ID token can be resolved (no logged-in agent, or an expired ID token with no refresh token), the SDK throws a `TokenExchangeError` with code `actor_unavailable` **before any network call**. When the agent's session ID token has expired and a refresh token is available, the SDK refreshes it automatically and persists the refreshed session.
+
+> [!WARNING]
+> `buildSessionTransferRedirect()` attaches a single-use credential to the URL, so `targetLoginUrl` **must be a trusted, app-controlled value**. Never derive it from untrusted input such as a `returnTo` query parameter, or the token could leak to an attacker-controlled host. The SDK enforces `https` (plain `http` is allowed only for the loopback hosts `localhost`, `127.0.0.1`, and `[::1]`, to support local development) and throws `InvalidConfigurationError` otherwise.
+
+The STT itself is **never persisted**. It is not written to the session or the transaction cookie. Do not cache or persist it either: hand it straight to the redirect and discard it. The only write this flow can make is to the agent's own session, and only when an expired ID token had to be refreshed to serve as the actor.
+
+### Target: redeeming the Session Transfer Token
+
+On the target app, the STT is redeemed as part of a **standard authorization code login**. The mounted `/auth/login` route does this for you: when a request arrives carrying `session_transfer_token`, the plugin forwards it to `/authorize`, together with `organization` when that parameter came along with the STT.
+
+So for the common case the target app needs **no extra code at all**. Register the plugin as usual and point the initiator at the target's login route:
+
+```ts
+fastify.register(fastifyAuth0, {
+  domain: '<AUTH0_DOMAIN>',
+  clientId: '<AUTH0_CLIENT_ID>',
+  clientSecret: '<AUTH0_CLIENT_SECRET>',
+  appBaseUrl: 'https://app.example.com',
+  sessionSecret: '<SESSION_SECRET>',
+});
+
+// The initiator redirects the agent to:
+//   https://app.example.com/auth/login?session_transfer_token=<STT>
+// The plugin forwards the STT to /authorize, and /auth/callback completes the login.
+```
+
+`returnTo` keeps working alongside an STT, so you can land the impersonated session on a specific page:
+
+```text
+https://app.example.com/auth/login?session_transfer_token=<STT>&returnTo=/orders/4821
+```
+
+If you run with `mountRoutes: false` and own your login route, forward the parameter yourself through `authorizationParams`. Mirror what the mounted route does: take the first value when a key is repeated, treat a blank value as absent, and only honour `organization` when an STT is present:
+
+```ts
+// Fastify parses a repeated query key into an array, so narrow to a single usable value.
+const getQueryValue = (value: string | string[] | undefined): string | undefined => {
+  const first = Array.isArray(value) ? value[0] : value;
+  const trimmed = first?.trim();
+  return trimmed ? trimmed : undefined;
+};
+
+fastify.get('/auth/login', async (request, reply) => {
+  const query = request.query as {
+    session_transfer_token?: string | string[];
+    organization?: string | string[];
+  };
+
+  const sessionTransferToken = getQueryValue(query.session_transfer_token);
+  // Only honour `organization` alongside an STT, which is the pair
+  // `buildSessionTransferRedirect` emits. That keeps a plain login unchanged.
+  const organization = sessionTransferToken ? getQueryValue(query.organization) : undefined;
+
+  const authorizationUrl = await fastify.auth0Client!.startInteractiveLogin(
+    {
+      authorizationParams: {
+        redirect_uri: 'https://app.example.com/auth/callback',
+        ...(sessionTransferToken ? { session_transfer_token: sessionTransferToken } : {}),
+      },
+      // Prefer the first-class `organization` option over `authorizationParams.organization`.
+      // Either form is validated against the returned ID token's claim at the callback, but
+      // this one is the documented surface and takes precedence when both are set.
+      ...(organization ? { organization } : {}),
+    },
+    { request, reply }
+  );
+
+  return reply.redirect(authorizationUrl.href);
+});
+```
+
+> [!NOTE]
+> The `session_transfer_token` is redeemed as a **query** parameter, so the target client's `session_transfer.allowed_authentication_methods` must include `"query"`. The resulting session is short-lived (hard-capped at 2 hours) and **cannot mint a refresh token**. To continue past that, run the whole flow again.
+>
+> Because the STT travels as a query parameter, it can land anywhere full URLs are retained: web server access logs, proxy and CDN logs, browser history, and the `Referer` header sent to third-party resources loaded by the redemption page. This is inherent to the redemption mechanism. It is mitigated by the token being **single-use and short-lived (~60s)** and, when configured, **device-bound** through `enforce_device_binding`. A leaked STT is worthless once redeemed or expired. Even so, avoid logging redemption URLs verbatim, and never persist or forward the STT beyond the immediate redirect.
+
+### Reading the `act` claim on the impersonation session
+
+Once the target session is established, the acting agent shows up as the `act` claim on the session user. Read it through the normal session surface to drive UI such as an impersonation banner:
+
+```ts
+import type { ActClaim } from '@auth0/auth0-fastify';
+
+fastify.get('/profile', { preHandler: hasSessionPreHandler }, async (request, reply) => {
+  const user = await fastify.auth0Client!.getUser({ request, reply });
+  const actor = user?.act as ActClaim | undefined;
+
+  return reply.viewAsync('profile.ejs', {
+    name: user!.name,
+    // When `actor` is set, this session is an impersonation: `actor.sub` is the agent.
+    impersonatedBy: actor?.sub,
+  });
+});
+```
+
+The `act` claim is deliberately **not** on the `requestSessionTransferToken()` result. It only appears on the tokens of the session created after the STT is redeemed, which is the target app, not the initiator.
+
+### Handling errors
+
+`requestSessionTransferToken()` throws `TokenExchangeError` when the exchange itself fails. Only `actor_unavailable` is raised by the SDK itself, client-side and before any network call. The server-side conditions are surfaced through `cause`. Argument and configuration problems throw their own error classes instead, listed in the second table below:
+
+```ts
+import { TokenExchangeError, TokenExchangeErrorCode } from '@auth0/auth0-fastify';
+
+fastify.post('/impersonate', async (request, reply) => {
+  try {
+    const result = await fastify.auth0Client!.requestSessionTransferToken(
+      { subjectToken: '<CUSTOMER_PROOF_TOKEN>', subjectTokenType: 'urn:acme:customer-subject' },
+      { request, reply }
+    );
+
+    return reply.redirect(
+      fastify.auth0Client!.buildSessionTransferRedirect('https://app.example.com/auth/login', result).href
+    );
+  } catch (error) {
+    if (error instanceof TokenExchangeError) {
+      // Raised by the SDK: no logged-in agent, or an expired ID token that cannot be refreshed.
+      if (error.code === TokenExchangeErrorCode.ACTOR_UNAVAILABLE) {
+        return reply.code(401).send({ error: 'Log in again to impersonate.' });
+      }
+
+      // Raised by Auth0 and surfaced through `cause`. Read `error_description` too: the
+      // server does not yet return a dedicated code for every condition, so some arrive as
+      // a generic `invalid_request` with the detail only in the description.
+      //   `setactor_required`          — your Action did not call setActor() (planned code)
+      //   `session_transfer_disabled`  — the tenant feature flag is off
+      const cause = error.cause as { error?: string; error_description?: string } | undefined;
+      return reply
+        .code(400)
+        .send({ error: cause?.error ?? 'Session transfer failed.', detail: cause?.error_description });
+    }
+
+    throw error;
+  }
+});
+```
+
+The error codes map cleanly onto the setup steps, which makes them useful for diagnosis.
+
+These are `TokenExchangeError` codes, read from `error.code` or from `error.cause`:
+
+| Code | What it means |
+| --- | --- |
+| `actor_unavailable` | Raised by the SDK before any network call. No logged-in agent, no explicit `actor`, or an expired ID token with no refresh token. |
+| `setactor_required` | Your Custom Token Exchange Action did not call `setActor()`. This is a planned code. Today the tenant returns `invalid_request` and says so in `error_description`, so match on the description as well. |
+| `session_transfer_disabled` | The `cte_session_transfer_token` feature flag is off on the tenant. |
+
+The rest are **separate error classes, not `TokenExchangeError`**, so a `catch` that only checks `instanceof TokenExchangeError` will let them through. All of them are raised by the SDK before any network call, so they show up while you are wiring the flow up rather than in production:
+
+| Error class | What it means |
+| --- | --- |
+| `InvalidConfigurationError` | The `targetLoginUrl` was relative, or used a scheme other than `https` on a non-loopback host. |
+| `MissingRequiredArgumentError` | `subjectToken`, `subjectTokenType`, or `targetLoginUrl` was missing or blank. |
+| `MissingClientAuthError` | No client credentials configured. An STT requires a confidential client. |
+| `OrganizationValidationError` | The `organization` passed to `requestSessionTransferToken()` or `buildSessionTransferRedirect()` was blank. |
 
 ## Multiple Custom Domains (MCD)
 

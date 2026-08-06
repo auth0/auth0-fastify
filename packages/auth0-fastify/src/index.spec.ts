@@ -4,7 +4,7 @@ import { http, HttpResponse } from 'msw';
 import { generateToken } from './test-utils/tokens.js';
 import Fastify from 'fastify';
 import plugin from './index.js';
-import { StateData } from '@auth0/auth0-server-js';
+import { StateData, TokenExchangeErrorCode } from '@auth0/auth0-server-js';
 import { decrypt, encrypt } from './test-utils/encryption.js';
 
 const domain = 'auth0.local';
@@ -213,8 +213,8 @@ test('auth/logout infers appBaseUrl from request when using a domain resolver', 
 
 test('requires appBaseUrl when using a static domain', async () => {
   const fastify = Fastify();
+  // @ts-expect-error appBaseUrl required for static domain
   fastify.register(plugin, {
-    // @ts-expect-error appBaseUrl required for static domain
     domain: domain,
     clientId: '<client_id>',
     clientSecret: '<client_secret>',
@@ -1466,4 +1466,942 @@ test('customTokenExchange forwards the organization to the token endpoint', asyn
 
   expect(res.statusCode).toBe(200);
   expect(capturedOrganization).toBe('org_123');
+});
+
+// --- Impersonation via Session Transfer Token (STT) -------------------------------------------
+//
+// Two roles are covered here:
+//   * Initiator — the support/admin app that mints an STT and redirects to the target.
+//   * Target    — the customer's app whose `/auth/login` forwards the STT to `/authorize`.
+//
+// The STT is opaque, single-use and short-lived. The plugin only passes it through: these tests
+// pin that it is never written to the session cookie on either side.
+
+const SESSION_TRANSFER_TOKEN_TYPE = 'urn:auth0:params:oauth:token-type:session_transfer_token';
+const ID_TOKEN_TYPE = 'urn:ietf:params:oauth:token-type:id_token';
+
+/**
+ * Handler that emulates Auth0's STT mint. Recognises the exchange by the `:session_transfer`
+ * audience, rejects a request with no `actor_token` the way the server does when the Action did
+ * not call `setActor`, and captures the submitted form for assertions.
+ */
+const sessionTransferTokenHandler = (captured: Record<string, string | null> = {}) =>
+  http.post(mockOpenIdConfiguration.token_endpoint, async ({ request }) => {
+    const info = await request.formData();
+    const audience = info.get('audience');
+
+    if (typeof audience === 'string' && audience.endsWith(':session_transfer')) {
+      for (const key of ['audience', 'actor_token', 'actor_token_type', 'subject_token', 'subject_token_type', 'organization', 'scope', 'reason']) {
+        captured[key] = info.get(key) as string | null;
+      }
+
+      if (!info.get('actor_token')) {
+        return HttpResponse.json(
+          {
+            error: 'invalid_request',
+            error_description: 'setActor is required when requesting a session transfer token via token exchange.',
+          },
+          { status: 400 }
+        );
+      }
+
+      return HttpResponse.json({
+        access_token: '<opaque-session-transfer-token>',
+        issued_token_type: SESSION_TRANSFER_TOKEN_TYPE,
+        token_type: 'N_A',
+        expires_in: 60,
+      });
+    }
+
+    // Any non-STT exchange on this endpoint (for example the actor-token refresh) keeps the
+    // default behaviour so the refresh path can be exercised in the same test.
+    return HttpResponse.json({
+      access_token: accessToken,
+      id_token: await generateToken(domain, 'agent_123', '<client_id>'),
+      expires_in: 60,
+      token_type: 'Bearer',
+    });
+  });
+
+/** Builds an encrypted agent session cookie so the SDK can source the actor from it. */
+const agentSessionCookie = async (idToken: string, refreshToken?: string) => {
+  const stateData: StateData = {
+    user: { sub: 'agent_123' },
+    idToken,
+    refreshToken,
+    tokenSets: [],
+    internal: { sid: '<sid>', createdAt: Math.floor(Date.now() / 1000) },
+  };
+
+  return await encrypt(stateData, '<secret>', '__a0_session', Date.now() + 1000);
+};
+
+const registerInitiator = (fastify: ReturnType<typeof Fastify>) =>
+  fastify.register(plugin, {
+    domain: domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    appBaseUrl: 'http://localhost:3000',
+    sessionSecret: '<secret>',
+  });
+
+test('requestSessionTransferToken mints an STT sourcing the actor from the agent session', async () => {
+  const captured: Record<string, string | null> = {};
+  server.use(sessionTransferTokenHandler(captured));
+
+  const agentIdToken = await generateToken(domain, 'agent_123', '<client_id>');
+  const fastify = Fastify();
+  registerInitiator(fastify);
+
+  fastify.post('/impersonate', async (request, reply) => {
+    const result = await fastify.auth0Client!.requestSessionTransferToken(
+      {
+        subjectToken: 'customer-proof-token',
+        subjectTokenType: 'urn:acme:customer-subject',
+      },
+      { request, reply }
+    );
+
+    return reply.send(result);
+  });
+
+  const res = await fastify.inject({
+    method: 'POST',
+    url: '/impersonate',
+    headers: { cookie: `__a0_session.0=${await agentSessionCookie(agentIdToken, '<refresh_token>')}` },
+  });
+
+  expect(res.statusCode).toBe(200);
+  expect(res.json().sessionTransferToken).toBe('<opaque-session-transfer-token>');
+  expect(res.json().issuedTokenType).toBe(SESSION_TRANSFER_TOKEN_TYPE);
+  expect(res.json().expiresIn).toBeGreaterThan(0);
+
+  // The audience is derived from the resolved domain, and the actor defaults to the session ID token.
+  expect(captured.audience).toBe(`urn:${domain}:session_transfer`);
+  expect(captured.actor_token).toBe(agentIdToken);
+  expect(captured.actor_token_type).toBe(ID_TOKEN_TYPE);
+  expect(captured.subject_token).toBe('customer-proof-token');
+  expect(captured.subject_token_type).toBe('urn:acme:customer-subject');
+});
+
+test('requestSessionTransferToken forwards the organization on the mint request', async () => {
+  const captured: Record<string, string | null> = {};
+  server.use(sessionTransferTokenHandler(captured));
+
+  const agentIdToken = await generateToken(domain, 'agent_123', '<client_id>');
+  const fastify = Fastify();
+  registerInitiator(fastify);
+
+  fastify.post('/impersonate', async (request, reply) => {
+    const result = await fastify.auth0Client!.requestSessionTransferToken(
+      {
+        subjectToken: 'customer-proof-token',
+        subjectTokenType: 'urn:acme:customer-subject',
+        organization: 'org_globex',
+      },
+      { request, reply }
+    );
+
+    return reply.send(result);
+  });
+
+  const res = await fastify.inject({
+    method: 'POST',
+    url: '/impersonate',
+    headers: { cookie: `__a0_session.0=${await agentSessionCookie(agentIdToken, '<refresh_token>')}` },
+  });
+
+  expect(res.statusCode).toBe(200);
+  expect(captured.organization).toBe('org_globex');
+});
+
+test('requestSessionTransferToken omits the organization when it is not provided', async () => {
+  const captured: Record<string, string | null> = {};
+  server.use(sessionTransferTokenHandler(captured));
+
+  const agentIdToken = await generateToken(domain, 'agent_123', '<client_id>');
+  const fastify = Fastify();
+  registerInitiator(fastify);
+
+  fastify.post('/impersonate', async (request, reply) => {
+    const result = await fastify.auth0Client!.requestSessionTransferToken(
+      {
+        subjectToken: 'customer-proof-token',
+        subjectTokenType: 'urn:acme:customer-subject',
+      },
+      { request, reply }
+    );
+
+    return reply.send(result);
+  });
+
+  const res = await fastify.inject({
+    method: 'POST',
+    url: '/impersonate',
+    headers: { cookie: `__a0_session.0=${await agentSessionCookie(agentIdToken, '<refresh_token>')}` },
+  });
+
+  expect(res.statusCode).toBe(200);
+  // Read off the form body, so this fails if an empty `organization=` is ever sent.
+  expect(captured.organization).toBeNull();
+});
+
+test('requestSessionTransferToken rejects a blank organization before refreshing the agent session', async () => {
+  // The session ID token is already expired, so resolving the actor would refresh it: a call to
+  // the token endpoint plus a write of the rotated tokens back to the session cookie. A blank
+  // organization has to be caught ahead of all that, not after.
+  let tokenEndpointCalls = 0;
+  server.use(
+    http.post(mockOpenIdConfiguration.token_endpoint, async () => {
+      tokenEndpointCalls++;
+      return HttpResponse.json({
+        access_token: accessToken,
+        id_token: await generateToken(domain, 'agent_123', '<client_id>'),
+        expires_in: 60,
+        token_type: 'Bearer',
+      });
+    })
+  );
+
+  const expiredAgentIdToken = await generateToken(domain, 'agent_123', '<client_id>', undefined, undefined, 0);
+  const fastify = Fastify();
+  registerInitiator(fastify);
+
+  fastify.post('/impersonate', async (request, reply) => {
+    try {
+      await fastify.auth0Client!.requestSessionTransferToken(
+        {
+          subjectToken: 'customer-proof-token',
+          subjectTokenType: 'urn:acme:customer-subject',
+          organization: '   ',
+        },
+        { request, reply }
+      );
+    } catch (error) {
+      return reply.code(400).send({ name: (error as Error).constructor.name });
+    }
+
+    return reply.send({ name: null });
+  });
+
+  const res = await fastify.inject({
+    method: 'POST',
+    url: '/impersonate',
+    headers: { cookie: `__a0_session.0=${await agentSessionCookie(expiredAgentIdToken, '<refresh_token>')}` },
+  });
+
+  expect(res.statusCode).toBe(400);
+  expect(res.json().name).toBe('OrganizationValidationError');
+  // No refresh round trip and no rotated tokens persisted.
+  expect(tokenEndpointCalls).toBe(0);
+  expect(res.headers['set-cookie']).toBeUndefined();
+});
+
+test('requestSessionTransferToken never writes the STT to the session', async () => {
+  server.use(sessionTransferTokenHandler());
+
+  const agentIdToken = await generateToken(domain, 'agent_123', '<client_id>');
+  const fastify = Fastify();
+  registerInitiator(fastify);
+
+  fastify.post('/impersonate', async (request, reply) => {
+    const result = await fastify.auth0Client!.requestSessionTransferToken(
+      {
+        subjectToken: 'customer-proof-token',
+        subjectTokenType: 'urn:acme:customer-subject',
+      },
+      { request, reply }
+    );
+
+    // The agent's own session must be untouched by the exchange.
+    const session = await fastify.auth0Client!.getSession({ request, reply });
+    return reply.send({ stt: result.sessionTransferToken, agentSub: session?.user?.sub });
+  });
+
+  const res = await fastify.inject({
+    method: 'POST',
+    url: '/impersonate',
+    headers: { cookie: `__a0_session.0=${await agentSessionCookie(agentIdToken, '<refresh_token>')}` },
+  });
+
+  expect(res.statusCode).toBe(200);
+  expect(res.json().agentSub).toBe('agent_123');
+
+  // No cookie is set at all, so the STT cannot have leaked into the session.
+  expect(res.headers['set-cookie']).toBeUndefined();
+});
+
+test('requestSessionTransferToken honours an explicit actor over the session', async () => {
+  const captured: Record<string, string | null> = {};
+  server.use(sessionTransferTokenHandler(captured));
+
+  const fastify = Fastify();
+  registerInitiator(fastify);
+
+  fastify.post('/impersonate', async (request, reply) => {
+    const result = await fastify.auth0Client!.requestSessionTransferToken(
+      {
+        subjectToken: 'customer-proof-token',
+        subjectTokenType: 'urn:acme:customer-subject',
+        actor: { token: 'explicit-actor-token' },
+      },
+      { request, reply }
+    );
+
+    return reply.send({ issuedTokenType: result.issuedTokenType });
+  });
+
+  // No session cookie is sent: the explicit actor makes a logged-in agent unnecessary.
+  const res = await fastify.inject({
+    method: 'POST',
+    url: '/impersonate',
+  });
+
+  expect(res.statusCode).toBe(200);
+  expect(captured.actor_token).toBe('explicit-actor-token');
+  // The actor type defaults to the ID token URN when omitted.
+  expect(captured.actor_token_type).toBe(ID_TOKEN_TYPE);
+});
+
+test('requestSessionTransferToken forwards scope and extra parameters to the token endpoint', async () => {
+  const captured: Record<string, string | null> = {};
+  server.use(sessionTransferTokenHandler(captured));
+
+  const fastify = Fastify();
+  registerInitiator(fastify);
+
+  fastify.post('/impersonate', async (request, reply) => {
+    await fastify.auth0Client!.requestSessionTransferToken(
+      {
+        subjectToken: 'customer-proof-token',
+        subjectTokenType: 'urn:acme:customer-subject',
+        actor: { token: 'explicit-actor-token' },
+        scope: 'openid profile',
+        extra: { reason: 'Investigating TCK-4821' },
+      },
+      { request, reply }
+    );
+
+    return reply.send({ ok: true });
+  });
+
+  const res = await fastify.inject({ method: 'POST', url: '/impersonate' });
+
+  expect(res.statusCode).toBe(200);
+  expect(captured.scope).toBe('openid profile');
+  // `extra` reaches the Action through the token endpoint request body.
+  expect(captured.reason).toBe('Investigating TCK-4821');
+});
+
+test('requestSessionTransferToken refreshes an expired agent ID token and uses the refreshed one as the actor', async () => {
+  const captured: Record<string, string | null> = {};
+  server.use(sessionTransferTokenHandler(captured));
+
+  // An ID token that expired an hour ago cannot be used as an actor: the server rejects it.
+  const expiredIdToken = await generateToken(
+    domain,
+    'agent_123',
+    '<client_id>',
+    undefined,
+    undefined,
+    Math.floor(Date.now() / 1000) - 3600
+  );
+
+  const fastify = Fastify();
+  registerInitiator(fastify);
+
+  fastify.post('/impersonate', async (request, reply) => {
+    const result = await fastify.auth0Client!.requestSessionTransferToken(
+      {
+        subjectToken: 'customer-proof-token',
+        subjectTokenType: 'urn:acme:customer-subject',
+      },
+      { request, reply }
+    );
+
+    return reply.send({ issuedTokenType: result.issuedTokenType });
+  });
+
+  const res = await fastify.inject({
+    method: 'POST',
+    url: '/impersonate',
+    headers: { cookie: `__a0_session.0=${await agentSessionCookie(expiredIdToken, '<refresh_token>')}` },
+  });
+
+  expect(res.statusCode).toBe(200);
+  expect(res.json().issuedTokenType).toBe(SESSION_TRANSFER_TOKEN_TYPE);
+
+  // The stale token must not be sent as the actor; the refreshed one is used instead.
+  expect(captured.actor_token).not.toBe(expiredIdToken);
+  expect(captured.actor_token).toBeTruthy();
+
+  // The refreshed agent session is persisted so rotation does not strand the refresh token.
+  expect(res.headers['set-cookie']).toBeDefined();
+});
+
+test('requestSessionTransferToken throws actor_unavailable when there is no agent session', async () => {
+  server.use(sessionTransferTokenHandler());
+
+  const fastify = Fastify();
+  registerInitiator(fastify);
+
+  fastify.post('/impersonate', async (request, reply) => {
+    try {
+      await fastify.auth0Client!.requestSessionTransferToken(
+        {
+          subjectToken: 'customer-proof-token',
+          subjectTokenType: 'urn:acme:customer-subject',
+        },
+        { request, reply }
+      );
+      return reply.send({ ok: true });
+    } catch (e) {
+      const error = e as Error & { code?: string };
+      return reply.code(400).send({ name: error.name, code: error.code });
+    }
+  });
+
+  // No session cookie and no explicit actor: this fails client-side, before any network call.
+  const res = await fastify.inject({ method: 'POST', url: '/impersonate' });
+
+  expect(res.statusCode).toBe(400);
+  expect(res.json().name).toBe('TokenExchangeError');
+  expect(res.json().code).toBe(TokenExchangeErrorCode.ACTOR_UNAVAILABLE);
+});
+
+test('requestSessionTransferToken throws actor_unavailable when the expired ID token cannot be refreshed', async () => {
+  server.use(sessionTransferTokenHandler());
+
+  const expiredIdToken = await generateToken(
+    domain,
+    'agent_123',
+    '<client_id>',
+    undefined,
+    undefined,
+    Math.floor(Date.now() / 1000) - 3600
+  );
+
+  const fastify = Fastify();
+  registerInitiator(fastify);
+
+  fastify.post('/impersonate', async (request, reply) => {
+    try {
+      await fastify.auth0Client!.requestSessionTransferToken(
+        {
+          subjectToken: 'customer-proof-token',
+          subjectTokenType: 'urn:acme:customer-subject',
+        },
+        { request, reply }
+      );
+      return reply.send({ ok: true });
+    } catch (e) {
+      const error = e as Error & { code?: string };
+      return reply.code(400).send({ name: error.name, code: error.code });
+    }
+  });
+
+  // The session carries an expired ID token and no refresh token, so the actor cannot be recovered.
+  const res = await fastify.inject({
+    method: 'POST',
+    url: '/impersonate',
+    headers: { cookie: `__a0_session.0=${await agentSessionCookie(expiredIdToken)}` },
+  });
+
+  expect(res.statusCode).toBe(400);
+  expect(res.json().code).toBe(TokenExchangeErrorCode.ACTOR_UNAVAILABLE);
+});
+
+test('requestSessionTransferToken surfaces a server-side setActor failure as a TokenExchangeError', async () => {
+  // The mint handler rejects a request with no actor_token exactly as the server does when the
+  // CTE Action did not call setActor. An explicit blank-free actor is bypassed here by sending
+  // none at all, which is what the server sees when the Action omits setActor.
+  server.use(
+    http.post(mockOpenIdConfiguration.token_endpoint, () =>
+      HttpResponse.json(
+        {
+          error: 'invalid_request',
+          error_description: 'setActor is required when requesting a session transfer token via token exchange.',
+        },
+        { status: 400 }
+      )
+    )
+  );
+
+  const fastify = Fastify();
+  registerInitiator(fastify);
+
+  fastify.post('/impersonate', async (request, reply) => {
+    try {
+      await fastify.auth0Client!.requestSessionTransferToken(
+        {
+          subjectToken: 'customer-proof-token',
+          subjectTokenType: 'urn:acme:customer-subject',
+          actor: { token: 'explicit-actor-token' },
+        },
+        { request, reply }
+      );
+      return reply.send({ ok: true });
+    } catch (e) {
+      const error = e as Error & { cause?: { error?: string; error_description?: string } };
+      return reply.code(400).send({ name: error.name, cause: error.cause?.error_description });
+    }
+  });
+
+  const res = await fastify.inject({ method: 'POST', url: '/impersonate' });
+
+  expect(res.statusCode).toBe(400);
+  expect(res.json().name).toBe('TokenExchangeError');
+  expect(res.json().cause).toContain('setActor is required');
+});
+
+test('requestSessionTransferToken surfaces a disabled tenant feature flag as a TokenExchangeError', async () => {
+  server.use(
+    http.post(mockOpenIdConfiguration.token_endpoint, () =>
+      HttpResponse.json(
+        { error: 'session_transfer_disabled', error_description: 'Session transfer is not enabled for this tenant.' },
+        { status: 400 }
+      )
+    )
+  );
+
+  const fastify = Fastify();
+  registerInitiator(fastify);
+
+  fastify.post('/impersonate', async (request, reply) => {
+    try {
+      await fastify.auth0Client!.requestSessionTransferToken(
+        {
+          subjectToken: 'customer-proof-token',
+          subjectTokenType: 'urn:acme:customer-subject',
+          actor: { token: 'explicit-actor-token' },
+        },
+        { request, reply }
+      );
+      return reply.send({ ok: true });
+    } catch (e) {
+      const error = e as Error & { cause?: { error?: string } };
+      return reply.code(400).send({ name: error.name, cause: error.cause?.error });
+    }
+  });
+
+  const res = await fastify.inject({ method: 'POST', url: '/impersonate' });
+
+  expect(res.statusCode).toBe(400);
+  expect(res.json().name).toBe('TokenExchangeError');
+  expect(res.json().cause).toBe(TokenExchangeErrorCode.SESSION_TRANSFER_DISABLED);
+});
+
+test('requestSessionTransferToken resolves the audience from the resolver domain (MCD)', async () => {
+  const captured: Record<string, string | null> = {};
+  server.use(sessionTransferTokenHandler(captured));
+
+  const agentIdToken = await generateToken(domain, 'agent_123', '<client_id>');
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    // Resolver mode: only the default test domain has discovery handlers registered, so the
+    // resolver returns it. The point of the test is that the audience follows the resolved
+    // domain rather than a hard-coded value.
+    domain: async () => domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    appBaseUrl: 'http://localhost:3000',
+    sessionSecret: '<secret>',
+  });
+
+  fastify.post('/impersonate', async (request, reply) => {
+    const result = await fastify.auth0Client!.requestSessionTransferToken(
+      {
+        subjectToken: 'customer-proof-token',
+        subjectTokenType: 'urn:acme:customer-subject',
+        actor: { token: agentIdToken },
+      },
+      { request, reply }
+    );
+
+    return reply.send({ issuedTokenType: result.issuedTokenType });
+  });
+
+  const res = await fastify.inject({ method: 'POST', url: '/impersonate' });
+
+  expect(res.statusCode).toBe(200);
+  expect(captured.audience).toBe(`urn:${domain}:session_transfer`);
+});
+
+test('buildSessionTransferRedirect appends the STT to the target login URL', async () => {
+  server.use(sessionTransferTokenHandler());
+
+  const fastify = Fastify();
+  registerInitiator(fastify);
+
+  fastify.post('/impersonate', async (request, reply) => {
+    const result = await fastify.auth0Client!.requestSessionTransferToken(
+      {
+        subjectToken: 'customer-proof-token',
+        subjectTokenType: 'urn:acme:customer-subject',
+        actor: { token: 'explicit-actor-token' },
+      },
+      { request, reply }
+    );
+
+    const url = fastify.auth0Client!.buildSessionTransferRedirect('https://app.example.com/auth/login', result);
+
+    return reply.redirect(url.href);
+  });
+
+  const res = await fastify.inject({ method: 'POST', url: '/impersonate' });
+
+  expect(res.statusCode).toBe(302);
+  const url = new URL(res.headers['location']?.toString() ?? '');
+  expect(url.origin).toBe('https://app.example.com');
+  expect(url.pathname).toBe('/auth/login');
+  expect(url.searchParams.get('session_transfer_token')).toBe('<opaque-session-transfer-token>');
+  expect(url.searchParams.get('organization')).toBeNull();
+
+  // Building the redirect writes nothing to the session.
+  expect(res.headers['set-cookie']).toBeUndefined();
+});
+
+test('buildSessionTransferRedirect forwards the organization when provided', async () => {
+  server.use(sessionTransferTokenHandler());
+
+  const fastify = Fastify();
+  registerInitiator(fastify);
+
+  fastify.post('/impersonate', async (request, reply) => {
+    const result = await fastify.auth0Client!.requestSessionTransferToken(
+      {
+        subjectToken: 'customer-proof-token',
+        subjectTokenType: 'urn:acme:customer-subject',
+        actor: { token: 'explicit-actor-token' },
+      },
+      { request, reply }
+    );
+
+    const url = fastify.auth0Client!.buildSessionTransferRedirect('https://app.example.com/auth/login', result, {
+      organization: 'org_globex',
+    });
+
+    return reply.send({ url: url.href });
+  });
+
+  const res = await fastify.inject({ method: 'POST', url: '/impersonate' });
+
+  expect(res.statusCode).toBe(200);
+  const url = new URL(res.json().url);
+  expect(url.searchParams.get('session_transfer_token')).toBe('<opaque-session-transfer-token>');
+  expect(url.searchParams.get('organization')).toBe('org_globex');
+});
+
+test('buildSessionTransferRedirect preserves existing query parameters on the target URL', async () => {
+  server.use(sessionTransferTokenHandler());
+
+  const fastify = Fastify();
+  registerInitiator(fastify);
+
+  fastify.post('/impersonate', async (request, reply) => {
+    const result = await fastify.auth0Client!.requestSessionTransferToken(
+      {
+        subjectToken: 'customer-proof-token',
+        subjectTokenType: 'urn:acme:customer-subject',
+        actor: { token: 'explicit-actor-token' },
+      },
+      { request, reply }
+    );
+
+    const url = fastify.auth0Client!.buildSessionTransferRedirect(
+      'https://app.example.com/auth/login?returnTo=%2Fdashboard',
+      result
+    );
+
+    return reply.send({ url: url.href });
+  });
+
+  const res = await fastify.inject({ method: 'POST', url: '/impersonate' });
+
+  expect(res.statusCode).toBe(200);
+  const url = new URL(res.json().url);
+  expect(url.searchParams.get('returnTo')).toBe('/dashboard');
+  expect(url.searchParams.get('session_transfer_token')).toBe('<opaque-session-transfer-token>');
+});
+
+test('buildSessionTransferRedirect rejects an insecure target login URL', async () => {
+  const fastify = Fastify();
+  registerInitiator(fastify);
+
+  fastify.post('/impersonate', async (request, reply) => {
+    try {
+      fastify.auth0Client!.buildSessionTransferRedirect('http://app.example.com/auth/login', {
+        sessionTransferToken: '<opaque-session-transfer-token>',
+        issuedTokenType: SESSION_TRANSFER_TOKEN_TYPE,
+        expiresIn: 60,
+      });
+      return reply.send({ ok: true });
+    } catch (e) {
+      return reply.code(400).send({ name: (e as Error).name });
+    }
+  });
+
+  const res = await fastify.inject({ method: 'POST', url: '/impersonate' });
+
+  expect(res.statusCode).toBe(400);
+  expect(res.json().name).toBe('InvalidConfigurationError');
+});
+
+test('buildSessionTransferRedirect allows an http loopback target login URL for local development', async () => {
+  const fastify = Fastify();
+  registerInitiator(fastify);
+
+  fastify.post('/impersonate', async (request, reply) => {
+    const url = fastify.auth0Client!.buildSessionTransferRedirect('http://localhost:3001/auth/login', {
+      sessionTransferToken: '<opaque-session-transfer-token>',
+      issuedTokenType: SESSION_TRANSFER_TOKEN_TYPE,
+      expiresIn: 60,
+    });
+
+    return reply.send({ url: url.href });
+  });
+
+  const res = await fastify.inject({ method: 'POST', url: '/impersonate' });
+
+  expect(res.statusCode).toBe(200);
+  const url = new URL(res.json().url);
+  expect(url.origin).toBe('http://localhost:3001');
+  expect(url.searchParams.get('session_transfer_token')).toBe('<opaque-session-transfer-token>');
+});
+
+test('buildSessionTransferRedirect rejects a relative target login URL', async () => {
+  const fastify = Fastify();
+  registerInitiator(fastify);
+
+  fastify.post('/impersonate', async (request, reply) => {
+    try {
+      fastify.auth0Client!.buildSessionTransferRedirect('/auth/login', {
+        sessionTransferToken: '<opaque-session-transfer-token>',
+        issuedTokenType: SESSION_TRANSFER_TOKEN_TYPE,
+        expiresIn: 60,
+      });
+      return reply.send({ ok: true });
+    } catch (e) {
+      return reply.code(400).send({ name: (e as Error).name });
+    }
+  });
+
+  const res = await fastify.inject({ method: 'POST', url: '/impersonate' });
+
+  expect(res.statusCode).toBe(400);
+  expect(res.json().name).toBe('InvalidConfigurationError');
+});
+
+test('auth/login forwards session_transfer_token to authorize (target app)', async () => {
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    domain: domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    appBaseUrl: 'http://localhost:3000',
+    sessionSecret: '<secret>',
+  });
+
+  const res = await fastify.inject({
+    method: 'GET',
+    url: '/auth/login?session_transfer_token=stt_opaque_abc',
+  });
+  const url = new URL(res.headers['location']?.toString() ?? '');
+
+  expect(res.statusCode).toBe(302);
+  expect(url.host).toBe(domain);
+  expect(url.pathname).toBe('/authorize');
+  // The STT reaches /authorize so Auth0 can redeem it and establish the impersonation session.
+  expect(url.searchParams.get('session_transfer_token')).toBe('stt_opaque_abc');
+  // Redemption is still a standard authorization-code login.
+  expect(url.searchParams.get('response_type')).toBe('code');
+  expect(url.searchParams.get('redirect_uri')).toBe('http://localhost:3000/auth/callback');
+  expect(url.searchParams.get('code_challenge')).toBeTypeOf('string');
+});
+
+test('auth/login forwards the organization alongside session_transfer_token (target app)', async () => {
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    domain: domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    appBaseUrl: 'http://localhost:3000',
+    sessionSecret: '<secret>',
+  });
+
+  const res = await fastify.inject({
+    method: 'GET',
+    url: '/auth/login?session_transfer_token=stt_opaque_abc&organization=org_globex',
+  });
+  const url = new URL(res.headers['location']?.toString() ?? '');
+
+  expect(res.statusCode).toBe(302);
+  expect(url.searchParams.get('session_transfer_token')).toBe('stt_opaque_abc');
+  expect(url.searchParams.get('organization')).toBe('org_globex');
+});
+
+test('auth/login ignores the organization when no session_transfer_token is present', async () => {
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    domain: domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    appBaseUrl: 'http://localhost:3000',
+    sessionSecret: '<secret>',
+  });
+
+  const res = await fastify.inject({
+    method: 'GET',
+    url: '/auth/login?organization=org_globex',
+  });
+  const url = new URL(res.headers['location']?.toString() ?? '');
+
+  // `organization` is only honoured as part of an STT redirect, so a plain login is unchanged.
+  expect(res.statusCode).toBe(302);
+  expect(url.searchParams.get('organization')).toBeNull();
+  expect(url.searchParams.get('session_transfer_token')).toBeNull();
+});
+
+test('auth/login ignores a blank organization alongside a session_transfer_token', async () => {
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    domain: domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    appBaseUrl: 'http://localhost:3000',
+    sessionSecret: '<secret>',
+  });
+
+  const res = await fastify.inject({
+    method: 'GET',
+    url: '/auth/login?session_transfer_token=stt_opaque_abc&organization=%20%20',
+  });
+  const url = new URL(res.headers['location']?.toString() ?? '');
+
+  // The STT still goes through, but a blank `organization` must be dropped rather than sent
+  // as an empty `organization=`, which Auth0 would reject.
+  expect(res.statusCode).toBe(302);
+  expect(url.searchParams.get('session_transfer_token')).toBe('stt_opaque_abc');
+  expect(url.searchParams.has('organization')).toBe(false);
+});
+
+test('auth/login ignores a blank session_transfer_token', async () => {
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    domain: domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    appBaseUrl: 'http://localhost:3000',
+    sessionSecret: '<secret>',
+  });
+
+  const res = await fastify.inject({
+    method: 'GET',
+    url: '/auth/login?session_transfer_token=%20%20',
+  });
+  const url = new URL(res.headers['location']?.toString() ?? '');
+
+  // A blank value must not be forwarded as an empty `session_transfer_token=` parameter.
+  expect(res.statusCode).toBe(302);
+  expect(url.searchParams.get('session_transfer_token')).toBeNull();
+  expect(url.searchParams.get('response_type')).toBe('code');
+});
+
+test('auth/login takes the first value when session_transfer_token is repeated', async () => {
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    domain: domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    appBaseUrl: 'http://localhost:3000',
+    sessionSecret: '<secret>',
+  });
+
+  // Fastify parses a repeated key into an array; the route must not crash on it.
+  const res = await fastify.inject({
+    method: 'GET',
+    url: '/auth/login?session_transfer_token=first&session_transfer_token=second',
+  });
+  const url = new URL(res.headers['location']?.toString() ?? '');
+
+  expect(res.statusCode).toBe(302);
+  expect(url.searchParams.get('session_transfer_token')).toBe('first');
+});
+
+test('auth/login still honours returnTo when redeeming an STT (target app)', async () => {
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    domain: domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    appBaseUrl: 'http://localhost:3000',
+    sessionSecret: '<secret>',
+  });
+
+  const res = await fastify.inject({
+    method: 'GET',
+    url: '/auth/login?session_transfer_token=stt_opaque_abc&returnTo=/dashboard',
+  });
+
+  expect(res.statusCode).toBe(302);
+  const url = new URL(res.headers['location']?.toString() ?? '');
+  expect(url.searchParams.get('session_transfer_token')).toBe('stt_opaque_abc');
+
+  // returnTo is carried in the transaction cookie, not on the authorize URL.
+  const cookieName = '__a0_tx';
+  const cookieValueRaw = fastify.parseCookie(res.headers['set-cookie']?.toString() as string)[cookieName] as string;
+  const transaction = (await decrypt(cookieValueRaw, '<secret>', cookieName)) as {
+    appState?: { returnTo?: string };
+  };
+  expect(transaction.appState?.returnTo).toBe('http://localhost:3000/dashboard');
+});
+
+test('auth/login does not persist the session_transfer_token in the transaction cookie', async () => {
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    domain: domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    appBaseUrl: 'http://localhost:3000',
+    sessionSecret: '<secret>',
+  });
+
+  const res = await fastify.inject({
+    method: 'GET',
+    url: '/auth/login?session_transfer_token=stt_opaque_abc',
+  });
+
+  expect(res.statusCode).toBe(302);
+
+  // The STT is single-use and must only be passed through to /authorize, never stored.
+  const cookieHeader = res.headers['set-cookie']?.toString() ?? '';
+  expect(cookieHeader).not.toContain('stt_opaque_abc');
+
+  const cookieName = '__a0_tx';
+  const cookieValueRaw = fastify.parseCookie(cookieHeader)[cookieName] as string;
+  const transaction = await decrypt(cookieValueRaw, '<secret>', cookieName);
+  expect(JSON.stringify(transaction)).not.toContain('stt_opaque_abc');
+});
+
+test('auth/login forwards session_transfer_token on a custom login route', async () => {
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    domain: domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    appBaseUrl: 'http://localhost:3000',
+    sessionSecret: '<secret>',
+    routes: {
+      login: '/custom-login',
+    },
+  });
+
+  const res = await fastify.inject({
+    method: 'GET',
+    url: '/custom-login?session_transfer_token=stt_opaque_abc',
+  });
+  const url = new URL(res.headers['location']?.toString() ?? '');
+
+  expect(res.statusCode).toBe(302);
+  expect(url.searchParams.get('session_transfer_token')).toBe('stt_opaque_abc');
 });

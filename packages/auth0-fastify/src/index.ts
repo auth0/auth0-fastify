@@ -15,6 +15,7 @@ import { createRouteUrl, toSafeRedirect } from './utils.js';
 import { FastifyCookieHandler } from './store/fastify-cookie-handler.js';
 
 export * from './types.js';
+export { MissingStoreOptionsError } from './errors/index.js';
 export type { DomainResolver } from '@auth0/auth0-server-js';
 export type {
   LoginWithCustomTokenExchangeOptions,
@@ -22,9 +23,20 @@ export type {
   LoginWithCustomTokenExchangeResult,
   TokenResponse,
   ActClaim,
+  RequestSessionTransferTokenOptions,
+  SessionTransferActor,
+  SessionTransferTokenResult,
+  BuildSessionTransferRedirectOptions,
 } from '@auth0/auth0-server-js';
 export { CookieTransactionStore } from '@auth0/auth0-server-js';
-export { TokenExchangeError, MissingClientAuthError } from '@auth0/auth0-server-js';
+export {
+  TokenExchangeError,
+  TokenExchangeErrorCode,
+  MissingClientAuthError,
+  MissingRequiredArgumentError,
+  InvalidConfigurationError,
+  OrganizationValidationError,
+} from '@auth0/auth0-server-js';
 
 declare module 'fastify' {
   /**
@@ -60,6 +72,21 @@ const assertAppBaseUrl = (value: string): string => {
 
 const getHeaderValue = (value: string | string[] | undefined): string | undefined =>
   Array.isArray(value) ? value[0] : value;
+
+/**
+ * Normalizes a query-string value to a single trimmed string.
+ *
+ * Fastify's default query parser turns a repeated key (`?a=1&a=2`) into an array, so a value
+ * that is a `string` in the route's type can still arrive as `string[]` at runtime. Taking the
+ * first entry mirrors how header values are normalized above and keeps a duplicated parameter
+ * from throwing. Returns `undefined` for a missing or blank value, so callers can treat
+ * "absent" and "present but empty" the same way.
+ */
+const getQueryValue = (value: string | string[] | undefined): string | undefined => {
+  const first = Array.isArray(value) ? value[0] : value;
+  const trimmed = first?.trim();
+  return trimmed ? trimmed : undefined;
+};
 
 const inferAppBaseUrlFromRequest = <
   RawServer extends RawServerBase = RawServerDefault,
@@ -220,7 +247,13 @@ export default fp(async function auth0Fastify<
       async (
         request: FastifyRequest<
           {
-            Querystring: { returnTo?: string };
+            Querystring: {
+              returnTo?: string;
+              // Declared as `string | string[]` because Fastify's query parser turns a repeated
+              // key into an array. `getQueryValue` narrows both shapes to a single value.
+              session_transfer_token?: string | string[];
+              organization?: string | string[];
+            };
           },
           RawServer,
           RawRequest
@@ -232,13 +265,28 @@ export default fp(async function auth0Fastify<
         const sanitizedReturnTo = toSafeRedirect(dangerousReturnTo || '/', appBaseUrl);
         const redirectUri = createRouteUrl(callbackPath, appBaseUrl);
 
+        // Session Transfer Token redemption (impersonation via session transfer). When an
+        // initiator app redirects here carrying `session_transfer_token`, forward it to
+        // `/authorize` so Auth0 can redeem it and establish the impersonation session. The STT
+        // is opaque and single-use: it is only passed through, never decoded or persisted.
+        //
+        // `organization` is forwarded only alongside an STT, which is exactly the pair that
+        // `buildSessionTransferRedirect` emits. Scoping it that way keeps plain `/auth/login`
+        // behaviour unchanged. It is passed as the first-class option, which is the form the
+        // core prefers and which wins over `authorizationParams.organization`; a blank value
+        // is rejected up front rather than sent as an empty `organization=`.
+        const sessionTransferToken = getQueryValue(request.query.session_transfer_token);
+        const organization = sessionTransferToken ? getQueryValue(request.query.organization) : undefined;
+
         const authorizationUrl = await auth0Client.startInteractiveLogin(
           {
             pushedAuthorizationRequests: options.pushedAuthorizationRequests,
             appState: { returnTo: sanitizedReturnTo },
             authorizationParams: {
               redirect_uri: redirectUri.toString(),
+              ...(sessionTransferToken ? { session_transfer_token: sessionTransferToken } : {}),
             },
+            ...(organization ? { organization } : {}),
           },
           { request, reply }
         );

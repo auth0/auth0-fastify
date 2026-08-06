@@ -31,6 +31,7 @@ Jump straight to the capability you need.
 | [Get the current session / user](./packages/auth0-fastify/README.md#4-protecting-routes) | Read the authenticated user with `getUser()` / `getSession()` |
 | [Call an API (`getAccessToken`)](./packages/auth0-fastify/README.md#requesting-an-access-token-to-call-an-api) | Get an access token to call APIs as the user |
 | [Custom Token Exchange](./packages/auth0-fastify/EXAMPLES.md#login-using-custom-token-exchange) | Create a session from an external token without a browser login |
+| [Impersonation via Session Transfer](./packages/auth0-fastify/EXAMPLES.md#impersonation-via-session-transfer) | Log an agent into another app as a customer, audited via the `act` claim |
 | [Multiple Custom Domains (MCD)](./packages/auth0-fastify/EXAMPLES.md#multiple-custom-domains-mcd) | Resolve the Auth0 domain per request |
 | [Custom `fetch`](./packages/auth0-fastify/EXAMPLES.md#configuring-a-customfetch-implementation) | Swap in your own fetch (proxies, retries, instrumentation) |
 | [Discovery cache](./packages/auth0-fastify/EXAMPLES.md#discovery-cache) | Control caching of OIDC discovery metadata and JWKS |
