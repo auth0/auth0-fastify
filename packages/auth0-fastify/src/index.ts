@@ -247,7 +247,13 @@ export default fp(async function auth0Fastify<
       async (
         request: FastifyRequest<
           {
-            Querystring: { returnTo?: string; session_transfer_token?: string; organization?: string };
+            Querystring: {
+              returnTo?: string;
+              // Declared as `string | string[]` because Fastify's query parser turns a repeated
+              // key into an array. `getQueryValue` narrows both shapes to a single value.
+              session_transfer_token?: string | string[];
+              organization?: string | string[];
+            };
           },
           RawServer,
           RawRequest

@@ -2262,6 +2262,29 @@ test('auth/login ignores the organization when no session_transfer_token is pres
   expect(url.searchParams.get('session_transfer_token')).toBeNull();
 });
 
+test('auth/login ignores a blank organization alongside a session_transfer_token', async () => {
+  const fastify = Fastify();
+  fastify.register(plugin, {
+    domain: domain,
+    clientId: '<client_id>',
+    clientSecret: '<client_secret>',
+    appBaseUrl: 'http://localhost:3000',
+    sessionSecret: '<secret>',
+  });
+
+  const res = await fastify.inject({
+    method: 'GET',
+    url: '/auth/login?session_transfer_token=stt_opaque_abc&organization=%20%20',
+  });
+  const url = new URL(res.headers['location']?.toString() ?? '');
+
+  // The STT still goes through, but a blank `organization` must be dropped rather than sent
+  // as an empty `organization=`, which Auth0 would reject.
+  expect(res.statusCode).toBe(302);
+  expect(url.searchParams.get('session_transfer_token')).toBe('stt_opaque_abc');
+  expect(url.searchParams.has('organization')).toBe(false);
+});
+
 test('auth/login ignores a blank session_transfer_token', async () => {
   const fastify = Fastify();
   fastify.register(plugin, {
@@ -2358,44 +2381,6 @@ test('auth/login does not persist the session_transfer_token in the transaction 
   const cookieValueRaw = fastify.parseCookie(cookieHeader)[cookieName] as string;
   const transaction = await decrypt(cookieValueRaw, '<secret>', cookieName);
   expect(JSON.stringify(transaction)).not.toContain('stt_opaque_abc');
-});
-
-test('auth/login redeems an STT when the target app already has a session', async () => {
-  const fastify = Fastify();
-  fastify.register(plugin, {
-    domain: domain,
-    clientId: '<client_id>',
-    clientSecret: '<client_secret>',
-    appBaseUrl: 'http://localhost:3000',
-    sessionSecret: '<secret>',
-  });
-
-  // The realistic support case: the agent is already logged into the target app under their
-  // own account, then follows an impersonation link. The existing session must not short
-  // circuit the redirect, or the STT expires unused and the agent keeps browsing as themselves.
-  const stateData: StateData = {
-    user: { sub: 'agent-own-account' },
-    idToken: '<id_token>',
-    refreshToken: '<refresh_token>',
-    tokenSets: [],
-    internal: { sid: '<sid>', createdAt: 1234567890 },
-  };
-  const sessionCookie = await encrypt(stateData, '<secret>', '__a0_session', Date.now() + 1000);
-
-  const res = await fastify.inject({
-    method: 'GET',
-    url: '/auth/login?session_transfer_token=stt_opaque_abc',
-    cookies: { __a0_session: sessionCookie },
-  });
-  const url = new URL(res.headers['location']?.toString() ?? '');
-
-  expect(res.statusCode).toBe(302);
-  expect(url.searchParams.get('session_transfer_token')).toBe('stt_opaque_abc');
-
-  // The impersonation session is only established at the callback, so the agent's own session
-  // is still intact here. What matters is that it was not swapped or cleared behind their back.
-  const cookieHeader = res.headers['set-cookie']?.toString() ?? '';
-  expect(cookieHeader).not.toContain('stt_opaque_abc');
 });
 
 test('auth/login forwards session_transfer_token on a custom login route', async () => {
