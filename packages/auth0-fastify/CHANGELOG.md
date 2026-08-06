@@ -1,5 +1,12 @@
 # Change Log
 
+## [v1.6.0](https://github.com/auth0/auth0-fastify/tree/auth0-fastify-v1.6.0) (2026-08-06)
+[Full Changelog](https://github.com/auth0/auth0-fastify/compare/auth0-fastify-v1.5.0...auth0-fastify-v1.6.0)
+
+**Added**
+- feat(auth0-fastify): add Session Transfer Token support for CTE impersonation [\#94](https://github.com/auth0/auth0-fastify/pull/94) ([@nandan-bhat](https://github.com/nandan-bhat))
+
+
 ## [v1.5.0](https://github.com/auth0/auth0-fastify/tree/auth0-fastify-v1.5.0) (2026-07-07)
 [Full Changelog](https://github.com/auth0/auth0-fastify/compare/auth0-fastify-v1.4.0...auth0-fastify-v1.5.0)
 
