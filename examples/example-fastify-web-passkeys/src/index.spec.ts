@@ -166,13 +166,15 @@ const post = (
   url: string,
   payload: unknown = {},
   cookie?: string,
-  headers: Record<string, string> = {}
+  headers: Record<string, string> = {},
+  remoteAddress?: string
 ) =>
   app.inject({
     method: 'POST',
     url,
     payload: JSON.stringify(payload),
     headers: { 'content-type': 'application/json', origin: ORIGIN, ...(cookie && { cookie }), ...headers },
+    ...(remoteAddress && { remoteAddress }),
   });
 
 /** The credential Auth0 received in the latest token request. */
@@ -636,21 +638,38 @@ describe('the user IP address', () => {
     expect(calls.challenge[0]?.headers.get('auth0-forwarded-for')).toBe('127.0.0.1');
   });
 
-  test('is the address the proxy added when TRUST_PROXY is the number of proxies, not one the client chose', async () => {
-    process.env.TRUST_PROXY = '1';
-    // The client sent 198.51.100.99 itself. The one proxy in front of the app appended the address it saw.
-    await post(await buildApp(), '/api/passkey/login/start', {}, undefined, {
-      'x-forwarded-for': '198.51.100.99, 203.0.113.9',
-    });
+  test('is the address the proxy added when TRUST_PROXY lists the proxy, not one the client chose', async () => {
+    process.env.TRUST_PROXY = '10.0.0.0/8';
+    // The client sent 198.51.100.99 itself. The proxy in front of the app (10.0.0.5) appended the address it saw.
+    const headers = { 'x-forwarded-for': '198.51.100.99, 203.0.113.9' };
+    await post(await buildApp(), '/api/passkey/login/start', {}, undefined, headers, '10.0.0.5');
 
     expect(calls.challenge[0]?.headers.get('auth0-forwarded-for')).toBe('203.0.113.9');
   });
 
-  test.each(['true', 'yes', '1.5', '-1', '1,2'])('refuses TRUST_PROXY=%s and explains it', async (value) => {
+  test('is not read from X-Forwarded-For when the request does not come from a listed proxy', async () => {
+    process.env.TRUST_PROXY = '10.0.0.0/8';
+    // A client that reaches the app directly can send any header it likes.
+    const headers = { 'x-forwarded-for': '198.51.100.99' };
+    await post(await buildApp(), '/api/passkey/login/start', {}, undefined, headers, '203.0.113.50');
+
+    expect(calls.challenge[0]?.headers.get('auth0-forwarded-for')).toBe('203.0.113.50');
+  });
+
+  test.each(['loopback', '127.0.0.1, 10.0.0.0/8', '::1', 'fd00::/8'])('accepts TRUST_PROXY=%s', async (value) => {
     process.env.TRUST_PROXY = value;
 
-    await expect(buildApp()).rejects.toThrow(/TRUST_PROXY must be the number of .*proxies/);
+    await expect(buildApp()).resolves.toBeDefined();
   });
+
+  test.each(['true', 'yes', '1', '1.5', '10.0.0.0/33', '10.0.0.0/0', '10.0.0.1, banana'])(
+    'refuses TRUST_PROXY=%s and explains it',
+    async (value) => {
+      process.env.TRUST_PROXY = value;
+
+      await expect(buildApp()).rejects.toThrow(/TRUST_PROXY must list the IP addresses of the reverse proxies/);
+    }
+  );
 
   test('sends no header when the address is unknown, instead of the text "undefined"', async () => {
     const app = await buildApp();

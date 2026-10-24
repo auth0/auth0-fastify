@@ -574,7 +574,7 @@ These routes are open to anyone who can reach them, and the signup start route c
   );
   ```
 
-- **Set `trustProxy`** to the number of proxies in front of your app (for example `1`), or to their addresses, so that `request.ip` is the user's address. Do not set it to `true`: that trusts every `X-Forwarded-For` entry, so a client can choose its own address and get around the rate limit. Auth0 uses the `auth0-forwarded-for` header only for applications with **Trust Token Endpoint IP Header** turned on (**Advanced Settings** > **OAuth**), and `startSignup()` rejects a value that is not a valid IP address.
+- **Set `trustProxy`** to the IP addresses or CIDR ranges of the proxies in front of your app (for example `'10.0.0.0/8'`), so that `request.ip` is the user's address. Do not set it to `true`: that trusts every `X-Forwarded-For` entry, so a client can choose its own address and get around the rate limit. Do not set it to a number of proxies either: that cannot tell a proxy from a client that connects directly, and Fastify 5.12.1 and later trust nothing for it. Auth0 uses the `auth0-forwarded-for` header only for applications with **Trust Token Endpoint IP Header** turned on (**Advanced Settings** > **OAuth**), and `startSignup()` rejects a value that is not a valid IP address.
 - **Accept only requests from your own page.** The routes write cookies, so refuse a `POST` that comes from another site. `fetch()` always sends `Origin` with a `POST`, and a page on another site cannot fake it. For example, for the routes under `/api/`:
 
   ```ts

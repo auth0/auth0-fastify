@@ -3,6 +3,7 @@ import fastifyStatic from '@fastify/static';
 import rateLimit from '@fastify/rate-limit';
 import fastifyAuth0, { PasskeyChallengeError, PasskeyRegisterError } from '@auth0/auth0-fastify';
 import 'dotenv/config';
+import { isIP } from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { completeBody, completeFailure, describeError, signupBody } from './passkey.js';
@@ -14,18 +15,45 @@ const __dirname = path.dirname(__filename);
 
 const REQUIRED_ENV = ['AUTH0_DOMAIN', 'AUTH0_CLIENT_ID', 'AUTH0_CLIENT_SECRET', 'AUTH0_SESSION_SECRET', 'APP_BASE_URL'];
 
-// The number of reverse proxies in front of the app: 0 when it is reachable directly. Never "true": Fastify would then
-// trust every X-Forwarded-For entry, so a client could choose the IP address that the rate limit counts and that Auth0
-// receives. With a number, it trusts only the entries that your own proxies added.
-function trustedProxies(value = ''): number {
-  if (value === '' || value === 'false') {
-    return 0;
+// The names that Fastify's proxy address matcher knows for the usual private ranges.
+const PROXY_NAMES = ['loopback', 'linklocal', 'uniquelocal'];
+
+// An IP address, or a CIDR range such as 10.0.0.0/8. A range of 0 bits would trust every address: it is not accepted.
+function isProxyAddress(proxy: string): boolean {
+  if (PROXY_NAMES.includes(proxy)) {
+    return true;
   }
-  const proxies = Number(value);
-  if (!Number.isInteger(proxies) || proxies < 0) {
+  const [address = '', bits, ...rest] = proxy.split('/');
+  const version = isIP(address);
+  const longest = version === 4 ? 32 : version === 6 ? 128 : 0;
+
+  return (
+    longest > 0 &&
+    rest.length === 0 &&
+    (bits === undefined || (/^\d+$/.test(bits) && Number(bits) >= 1 && Number(bits) <= longest))
+  );
+}
+
+// The reverse proxies in front of the app: a comma-separated list of IP addresses or CIDR ranges, for example
+// "127.0.0.1" or "10.0.0.0/8, 192.168.0.0/16" (the names loopback, linklocal and uniquelocal work too). Empty or
+// "false" means none: the app is reachable directly. Fastify then reads X-Forwarded-For only on a request that comes
+// from one of these addresses, and takes the first address from the right that is not one of them as the user's.
+// Never "true" (Fastify would trust every entry, so a client could choose the IP address that the rate limit counts
+// and that Auth0 receives) and never a number of proxies (it cannot tell a proxy from a client that connects
+// directly, so Fastify 5.12.1 and later trust nothing for it).
+function trustedProxies(value = ''): string[] | false {
+  const proxies = value
+    .split(',')
+    .map((proxy) => proxy.trim())
+    .filter((proxy) => proxy !== '');
+  if (proxies.length === 0 || value.trim() === 'false') {
+    return false;
+  }
+  if (!proxies.every(isProxyAddress)) {
     throw new Error(
-      `TRUST_PROXY must be the number of reverse proxies in front of this app, for example 1 (got "${value}"). ` +
-        'Do not use "true": it trusts every X-Forwarded-For entry, so a client could choose its own IP address.'
+      'TRUST_PROXY must list the IP addresses of the reverse proxies in front of this app, for example ' +
+        `127.0.0.1 or 10.0.0.0/8 (got "${value}"). Do not use "true", which trusts every X-Forwarded-For entry, or a ` +
+        'number of proxies, which current Fastify versions ignore.'
     );
   }
   return proxies;
@@ -65,9 +93,9 @@ export async function buildApp() {
 
   const fastify = Fastify({
     logger: process.env.NODE_ENV !== 'test',
-    // Behind a reverse proxy you control, set TRUST_PROXY to their number (for example 1) so that `request.ip` is the
-    // user's address and not the proxy's. Never trust X-Forwarded-For when the app is reachable directly.
-    trustProxy: trustedProxies(process.env.TRUST_PROXY) || false,
+    // Behind a reverse proxy you control, set TRUST_PROXY to its address (for example 127.0.0.1) so that `request.ip`
+    // is the user's address and not the proxy's. Never trust X-Forwarded-For when the app is reachable directly.
+    trustProxy: trustedProxies(process.env.TRUST_PROXY),
   });
 
   // The database connection that has the Passkey authentication method turned on. It is set here, on the server:

@@ -41,14 +41,14 @@ Rename `.env.example` to `.env` here and fill in the values:
 | `AUTH0_SESSION_SECRET` | The key that encrypts the session and passkey cookies. Generate one with `openssl rand -hex 64`. |
 | `APP_BASE_URL` | The address of this app, for example `https://app.login.example.com`. The page must be opened at exactly this address. |
 | `AUTH0_CONNECTION` | The connection with the Passkey method. Optional: the Default Directory is used when it is empty. |
-| `TRUST_PROXY` | The number of reverse proxies in front of the app, for example `1` (see below). Default `false`. Never `true`: a client could then choose its own IP address. |
+| `TRUST_PROXY` | The IP addresses or CIDR ranges of the reverse proxies in front of the app, comma separated, for example `127.0.0.1` or `10.0.0.0/8` (see below). Default `false`. Never `true` (a client could then choose its own IP address) or a number (current Fastify versions ignore it). |
 | `PORT` | The port the app listens on. Default `3000`. |
 
 ## Where to run it
 
 Auth0 uses your custom domain as the WebAuthn relying party ID, and a browser only lets a page use a passkey when the page is served over HTTPS from that domain or one of its subdomains. For the custom domain `login.example.com`, use a subdomain such as `https://app.login.example.com`. Auth0 serves the custom domain itself, so the app cannot be there. `http://localhost:3000` does not work: the browser refuses the passkey with a `SecurityError`.
 
-To run it on your machine, point the hostname at `127.0.0.1` (a `hosts` file entry), and put a reverse proxy in front of the app that serves that hostname over HTTPS with a locally trusted certificate, for example one made with [mkcert](https://github.com/FiloSottile/mkcert). Forward it to the app on `PORT`, set `APP_BASE_URL` to the proxy's address (include the port when it is not 443), and set `TRUST_PROXY=1`, so that the app takes the user's IP address from the one proxy you control.
+To run it on your machine, point the hostname at `127.0.0.1` (a `hosts` file entry), and put a reverse proxy in front of the app that serves that hostname over HTTPS with a locally trusted certificate, for example one made with [mkcert](https://github.com/FiloSottile/mkcert). Forward it to the app on `PORT`, set `APP_BASE_URL` to the proxy's address (include the port when it is not 443), and set `TRUST_PROXY=loopback`, so that the app takes the user's IP address from the proxy on your machine (it connects from `127.0.0.1` or `::1`).
 
 ## Run
 
