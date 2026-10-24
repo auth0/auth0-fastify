@@ -7,6 +7,13 @@
 - [The `ServerClient` instance](#the-serverclient-instance)
 - [Protecting Routes](#protecting-routes)
 - [Requesting an Access Token to call an API](#requesting-an-access-token-to-call-an-api)
+- [Login and Signup using Passkeys](#login-and-signup-using-passkeys)
+  - [How it works](#how-it-works)
+  - [The routes](#the-routes)
+  - [Handling errors and retries](#handling-errors-and-retries)
+  - [Verifying the email address or phone number at signup](#verifying-the-email-address-or-phone-number-at-signup)
+  - [The browser side](#the-browser-side)
+  - [Securing the routes](#securing-the-routes)
 - [Login using Custom Token Exchange](#login-using-custom-token-exchange)
   - [Performing a delegation exchange without a session](#performing-a-delegation-exchange-without-a-session)
   - [Using actor tokens for delegation](#using-actor-tokens-for-delegation)
@@ -188,6 +195,402 @@ Retrieving the token can be achieved by using `getAccessToken`:
 const accessTokenResult = await fastify.auth0Client.getAccessToken({ request, reply });
 console.log(accessTokenResult.accessToken);
 ```
+
+## Login and Signup using Passkeys
+
+Passkeys let users sign up and log in with a device credential (a fingerprint, a face scan or a security key) instead of a password. A signup can also verify the user's email address and phone number with one-time codes before the account is created.
+
+The plugin does not mount routes for this flow. You add three routes that call `fastify.auth0Client.passkey`, so your own validation, rate limits and bot checks sit in front of them. After a successful flow the session is the same as after an OIDC login, so `getUser()`, `getSession()` and `getAccessToken()` work as usual. The [passkeys example app](https://github.com/auth0/auth0-fastify/tree/main/examples/example-fastify-web-passkeys) has these routes and a complete page for them.
+
+> [!IMPORTANT]
+> Check these in your [Auth0 Dashboard](https://manage.auth0.com) first:
+>
+> 1. **Enable the passkey authentication method**: go to **Authentication** > **Database** > your connection > **Authentication Methods** > **Passkey**. The connection's name is the `realm` in the routes below. Without a `realm`, Auth0 uses the tenant's Default Directory.
+> 2. **Enable the passkey grant**: go to your application > **Advanced Settings** > **Grant Types** and enable **Passkey**. `passkey.complete()` fails without it.
+> 3. **Set up a [custom domain](https://auth0.com/docs/customize/custom-domains)** and use it as the plugin's `domain`. Passkeys are bound to it, so they do not work on the default `*.auth0.com` domain. The page that asks for the passkey must be served over HTTPS from your custom domain or one of its subdomains (usually a subdomain, because Auth0 serves the custom domain itself). `http://localhost` does not work: the browser refuses the passkey with a `SecurityError`. The example app's README shows [how to run it on your machine](https://github.com/auth0/auth0-fastify/blob/main/examples/example-fastify-web-passkeys/README.md#where-to-run-it).
+> 4. **Use a client secret**: `startSignup()` and `startLogin()` accept only a `clientSecret` as their client credential, not a private key JWT or mTLS. Set the application's authentication method to **Client Secret**. `complete()` works with any method.
+>
+> Read [the Auth0 docs](https://auth0.com/docs/authenticate/database-connections/passkeys) to learn more about passkeys.
+
+### How it works
+
+Every passkey flow takes two requests, because the WebAuthn calls (`navigator.credentials.create()` and `navigator.credentials.get()`) only run in the browser:
+
+1. The browser asks your server to start. Your server calls `passkey.startSignup()` or `passkey.startLogin()` and returns `authnParamsPublicKey`, the options for the browser call.
+2. The browser runs its call and sends the credential back. Your server calls `passkey.complete()`, which exchanges it for tokens and writes the session.
+
+Between the two requests the SDK keeps the flow, including the Auth0 `authSession`, in the encrypted `HttpOnly` cookie `__a0_passkey_tx` (60 seconds, or 15 minutes when the signup needs codes). The `authSession` never reaches your code or the browser, and a new start replaces the pending flow in that browser. Serve the page and these routes from the same origin, so that the browser sends the cookies back on its own.
+
+> [!WARNING]
+> Pass `{ request, reply }` as the second argument of every passkey call, so the SDK can read and write that cookie. Without it the call throws `MissingStoreOptionsError`, and `startSignup()` has already reached Auth0 by then (as of the `@auth0/auth0-server-js` 1.17.0 that the plugin builds on), so the codes may already be on their way.
+
+### The routes
+
+Register the plugin as in [Basic configuration](#basic-configuration), then add the routes:
+
+```ts
+import type { FastifyRequest } from 'fastify';
+import {
+  isMfaRequiredError,
+  MissingRequiredArgumentError,
+  MissingTransactionError,
+  PasskeyGetTokenError,
+} from '@auth0/auth0-fastify';
+import type {
+  PasskeyCredentialResponse,
+  PasskeyRegisterOptions,
+  PasskeyVerificationCodes,
+} from '@auth0/auth0-fastify';
+
+// The database connection that has the Passkey authentication method turned on.
+const realm = '<AUTH0_CONNECTION>';
+
+// Auth0 sees your server's address. This header tells it the user's address (see "Securing the routes" below).
+const forwardIp = (request: FastifyRequest) =>
+  request.ip ? { headers: { 'auth0-forwarded-for': request.ip } } : undefined;
+
+// 1a. Start a signup. When the connection verifies the email address or phone number, Auth0 sends the codes now.
+fastify.post<{ Body: PasskeyRegisterOptions }>('/api/passkey/signup/start', async (request, reply) => {
+  const { authnParamsPublicKey, verificationRequired } = await fastify.auth0Client!.passkey.startSignup(
+    { ...request.body, realm },
+    { request, reply },
+    forwardIp(request)
+  );
+
+  return { authnParamsPublicKey, verificationRequired: verificationRequired ?? [] };
+});
+
+// 1b. Start a login.
+fastify.post('/api/passkey/login/start', async (request, reply) => {
+  const { authnParamsPublicKey } = await fastify.auth0Client!.passkey.startLogin(
+    { realm },
+    { request, reply },
+    forwardIp(request)
+  );
+
+  return { authnParamsPublicKey };
+});
+
+// 2. Complete a signup or a login. The SDK reads the flow from its cookie, exchanges the passkey for tokens and
+//    writes the session.
+fastify.post<{ Body: { credential: PasskeyCredentialResponse; verification?: PasskeyVerificationCodes } }>(
+  '/api/passkey/complete',
+  async (request, reply) => {
+    const { credential, verification } = request.body;
+
+    try {
+      await fastify.auth0Client!.passkey.complete(
+        { credential, verification },
+        { request, reply },
+        forwardIp(request)
+      );
+
+      return { status: 'complete' };
+    } catch (error) {
+      if (error instanceof PasskeyGetTokenError && error.isRetryable) {
+        // A wrong code: ask again for the identifiers still listed, and send the same passkey.
+        return reply.code(400).send({ status: 'retry', verificationRequired: error.verificationRequired ?? [] });
+      }
+      if (error instanceof PasskeyGetTokenError && error.statusCode === 429) {
+        return reply.code(429).send({ status: 'wait' }); // send the same request again later
+      }
+      if (isMfaRequiredError(error)) {
+        return { status: 'mfa_required' }; // continue with fastify.auth0Client!.mfa
+      }
+      if (error instanceof MissingTransactionError) {
+        return reply.code(400).send({ status: 'restart' }); // no flow, or it expired: start again
+      }
+      if (
+        error instanceof MissingRequiredArgumentError ||
+        (error instanceof PasskeyGetTokenError && error.cause?.error === 'invalid_request')
+      ) {
+        return reply.code(400).send({ status: 'invalid' }); // for example a missing code: fix the input, send again
+      }
+
+      // Log a summary of an Auth0 error, never the whole error: its `cause` can hold an `mfa_token`. Other errors
+      // (a store failure, a bug) are safe to log in full. A server or network failure has no `cause.error`, only a
+      // `cause.message`.
+      request.log.warn(
+        error instanceof PasskeyGetTokenError
+          ? { errorCode: error.cause?.error || error.cause?.message }
+          : { err: error },
+        'passkey.complete() failed'
+      );
+      return reply.code(400).send({ status: 'failed' });
+    }
+  }
+);
+```
+
+The `status` values (`complete`, `retry`, `wait` and so on) are only a convention between these routes and the browser code below. Use whatever fits your frontend. The routes skip body validation to stay short: add the schemas from [Securing the routes](#securing-the-routes) before you go live.
+
+`startSignup()` and `startLogin()` throw a `PasskeyRegisterError` or a `PasskeyChallengeError` when Auth0 refuses the request, for example because the user already exists, a code could not be sent, or Auth0 rate limits the call. Nothing is stored then. Fastify's default error handler answers with `error.statusCode` (for example 400 or 429) and Auth0's description in `message`. In a real app, catch these errors, for example with `fastify.setErrorHandler()` as the example app does, and show your own message.
+
+### Handling errors and retries
+
+`passkey.complete()` deletes the stored flow once Auth0 has used the auth session: on success, on `mfa_required`, when Auth0 reports the auth session as used, expired or invalid, and when the ID token organization does not match. After any other failure the flow is kept, and you can call `complete()` again with the same credential.
+
+| `complete()` throws | Meaning | The route answers | What the browser does |
+|---|---|---|---|
+| `PasskeyGetTokenError` with `isRetryable` | A one-time code was wrong. `error.verificationRequired` lists the identifiers that still need a code (if it is missing, ask for the same ones again). | `retry` | Ask for those codes only, then send the same credential again. |
+| `PasskeyGetTokenError` with `statusCode` 429 | Rate limited. Auth0 checks this before it uses the attempt. | `wait` | Wait (`error.headers?.get('retry-after')` says how long), then send the same request again. |
+| `isMfaRequiredError(error)` | The passkey and any codes were accepted, but the user must complete MFA. No session yet. | `mfa_required` | Continue with `fastify.auth0Client.mfa`, see [Handling an `mfa_required` response](https://github.com/auth0/auth0-auth-js/blob/main/packages/auth0-server-js/EXAMPLES.md#handling-an-mfa_required-response). Never send `error.cause.mfa_token` to the browser. |
+| `MissingTransactionError` | No flow to complete: none was started, it expired, a newer start replaced it (for example in another tab), or the cookie cannot be read (for example after the session secret changed). Auth0 was not called. | `restart` | Start a new flow. |
+| `MissingRequiredArgumentError`, or `PasskeyGetTokenError` with `cause.error` set to `invalid_request` | The request was incomplete or invalid: the credential cannot be read, or a code is missing or blank. The SDK checks the credential and the codes before it calls Auth0, and the flow is kept. | `invalid` | Fix the input, then send again. |
+| Anything else | Auth0 refused the exchange for another reason (see `error.cause?.error`, for example `invalid_grant` when the attempt expired or was already used), or could not be reached (the error has no `statusCode`). | `failed` | Send the same request once more, and start a new flow if that fails too. A flow that is over answers `restart` the second time. |
+
+Use `isRetryable` to tell a wrong code from a failure that ends the attempt, and never the HTTP status or the error description: they are the same for both, because both are an `invalid_grant`. The errors never carry the `authSession`, but their `cause` can hold an `mfa_token`, so do not log or return a whole error.
+
+### Verifying the email address or phone number at signup
+
+When the connection verifies identifiers at signup, `startSignup()` returns `verificationRequired` (for example `['email', 'phone']`) and Auth0 has sent a one-time code to each listed identifier. Ask the user for the codes **before** you call `navigator.credentials.create()`, so nobody is left with a passkey for an account that was never created. Then send the codes with the credential. The profile field is `phoneNumber`, but its identifier and its code are `phone`:
+
+```json
+{ "credential": { "id": "...", "rawId": "...", "type": "public-key", "response": {} }, "verification": { "email": "123456", "phone": "654321" } }
+```
+
+- Send a code for every identifier in the list (a missing or blank one is answered with `invalid`).
+- After a wrong code, ask again only for the identifiers in `error.verificationRequired`, and send the **same** credential, kept in page memory: the user sees no second passkey prompt. The SDK keeps the shorter list too.
+- To send new codes, call the signup start route again before the passkey exists. That starts a new flow and sends new codes: the user enters the newest ones, and the passkey is created with the options from the latest response.
+- The user has 15 minutes to enter the codes, retries included. Any other passkey flow started in that browser, in any tab, replaces the pending signup, which can then no longer be completed.
+- To choose how the phone code is delivered, pass `deliveryMethod` (`'text'` or `'voice'`) with the `phoneNumber`. Leave it out to let Auth0 use the channel the connection supports (SMS when it supports both or none). A channel that the connection does not support makes the start call fail.
+
+Only the identifiers you pass are verified, using the connection's signup verification settings: an email address must be set up for verification with a one-time code (a verification link does not use this flow), and so must a phone number. See the [server SDK documentation](https://github.com/auth0/auth0-auth-js/blob/main/packages/auth0-server-js/EXAMPLES.md#verifying-the-email-or-phone-number-at-signup) for the details.
+
+### The browser side
+
+The WebAuthn calls are the same in every framework:
+
+1. `POST` to the start route and read `authnParamsPublicKey`. For a signup with `verificationRequired`, ask the user for the codes now.
+2. Turn the base64url fields of `authnParamsPublicKey` (`challenge`, `user.id` and the credential ids) into `ArrayBuffer`s, then call `navigator.credentials.create({ publicKey })` (signup) or `navigator.credentials.get({ publicKey })` (login). Where the browser has them, `PublicKeyCredential.parseCreationOptionsFromJSON()` and `parseRequestOptionsFromJSON()` do the conversion.
+3. Turn the credential into base64url strings, and `POST` it, with the codes, to the complete route. On `retry`, ask for the listed codes and `POST` again with the same credential. On `restart`, start again.
+
+```js
+async function post(path, body = {}) {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  return { httpStatus: response.status, ...(await response.json()) };
+}
+
+async function loginWithPasskey() {
+  const start = await post('/api/passkey/login/start');
+  if (!start.authnParamsPublicKey) return start; // Auth0 refused the start: show start.message
+
+  const publicKey = requestOptions(start.authnParamsPublicKey);
+  const credential = await navigator.credentials.get({ publicKey });
+
+  return post('/api/passkey/complete', { credential: serialize(credential) });
+}
+
+// `askForCodes(identifiers)` is your own UI. It resolves with one code for each identifier, for example
+// { email: '123456', phone: '654321' }.
+async function signUpWithPasskey(profile) {
+  const start = await post('/api/passkey/signup/start', profile);
+  if (!start.authnParamsPublicKey) return start; // for example the user already exists: show start.message
+
+  // Ask for the codes first: the passkey is only created once the user has them.
+  let identifiers = start.verificationRequired;
+  let verification = identifiers.length > 0 ? await askForCodes(identifiers) : undefined;
+  const publicKey = creationOptions(start.authnParamsPublicKey);
+  const credential = serialize(await navigator.credentials.create({ publicKey }));
+
+  let result = await post('/api/passkey/complete', { credential, verification });
+  while (result.status === 'retry') {
+    // A wrong code: ask again for the identifiers that are still listed, and send the same credential.
+    if (result.verificationRequired.length > 0) identifiers = result.verificationRequired;
+    verification = await askForCodes(identifiers);
+    result = await post('/api/passkey/complete', { credential, verification });
+  }
+
+  return result; // result.status is 'complete', or one of the other statuses in the table above
+}
+```
+
+This is the short version. The example app also handles a cancelled prompt, a network error, `wait`, `restart` and `failed`.
+
+<details>
+<summary>The helpers: <code>creationOptions</code>, <code>requestOptions</code> and <code>serialize</code></summary>
+
+```js
+// Auth0 sends binary values as base64url strings. The WebAuthn API wants ArrayBuffers.
+function fromBase64url(value) {
+  const base64 = value.replace(/-/g, '+').replace(/_/g, '/');
+  const binary = atob(base64 + '='.repeat((4 - (base64.length % 4)) % 4));
+  return Uint8Array.from(binary, (char) => char.charCodeAt(0)).buffer;
+}
+
+function toBase64url(buffer) {
+  let binary = '';
+  for (const byte of new Uint8Array(buffer)) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+const decodeIds = (descriptors) =>
+  descriptors.map((descriptor) => ({ ...descriptor, id: fromBase64url(descriptor.id) }));
+
+// `authnParamsPublicKey` from the signup start route, ready for `navigator.credentials.create({ publicKey })`.
+function creationOptions(options) {
+  return {
+    ...options,
+    challenge: fromBase64url(options.challenge),
+    user: { ...options.user, id: fromBase64url(options.user.id) },
+    ...(options.excludeCredentials && { excludeCredentials: decodeIds(options.excludeCredentials) }),
+  };
+}
+
+// `authnParamsPublicKey` from the login start route, ready for `navigator.credentials.get({ publicKey })`.
+function requestOptions(options) {
+  return {
+    ...options,
+    challenge: fromBase64url(options.challenge),
+    ...(options.allowCredentials && { allowCredentials: decodeIds(options.allowCredentials) }),
+  };
+}
+
+// The credential the browser made, as the JSON the complete route takes. Send only these fields:
+// do not send `credential.toJSON()`, because Auth0 rejects its extra fields.
+function serialize(credential) {
+  const raw = credential.response;
+  const response = { clientDataJSON: toBase64url(raw.clientDataJSON) };
+  if (raw.attestationObject) response.attestationObject = toBase64url(raw.attestationObject);
+  if (raw.authenticatorData) response.authenticatorData = toBase64url(raw.authenticatorData);
+  if (raw.signature) response.signature = toBase64url(raw.signature);
+  if (raw.userHandle) response.userHandle = toBase64url(raw.userHandle);
+  return {
+    id: credential.id,
+    rawId: toBase64url(credential.rawId),
+    type: credential.type,
+    ...(credential.authenticatorAttachment && { authenticatorAttachment: credential.authenticatorAttachment }),
+    response,
+    clientExtensionResults: credential.getClientExtensionResults(),
+  };
+}
+```
+
+</details>
+
+If `complete()` throws `MissingTransactionError` on every attempt, check that the browser decodes the base64url `challenge` to bytes, instead of using the characters of the string. Send only the fields that `serialize()` returns: Auth0 rejects the extra fields of `credential.toJSON()` with an `invalid_request` error.
+
+### Securing the routes
+
+These routes are open to anyone who can reach them, and the signup start route can make Auth0 send an email, an SMS or a voice call to any address or number. Add these before you go live:
+
+- **Validate the body, and drop what you did not ask for.** With Fastify's default settings, a schema with `additionalProperties: false` removes every property it does not list, so the browser cannot choose the `organization`, `userMetadata` or any other option of `startSignup()`, and Auth0 never gets a credential field it rejects. Add `{ schema: { body: signupBody }, bodyLimit: 32 * 1024 }` to the signup start route and `{ schema: { body: completeBody }, bodyLimit: 32 * 1024 }` to the complete route. A credential is a few KB, and the default `bodyLimit` is 1 MiB.
+
+  <details>
+  <summary>The schemas</summary>
+
+  ```ts
+  import type {
+    PasskeyCredentialResponse,
+    PasskeyDeliveryMethod,
+    PasskeyVerificationCodes,
+  } from '@auth0/auth0-fastify';
+
+  type SignupBody = {
+    name?: string;
+    deliveryMethod?: PasskeyDeliveryMethod;
+  } & ({ email: string; phoneNumber?: string } | { phoneNumber: string; email?: string });
+
+  const signupBody = {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      email: { type: 'string', format: 'email', maxLength: 254 },
+      phoneNumber: { type: 'string', pattern: '^\\+[1-9]\\d{6,14}$' }, // E.164
+      name: { type: 'string', minLength: 1, maxLength: 100 },
+      deliveryMethod: { type: 'string', enum: ['text', 'voice'] },
+    },
+    anyOf: [{ required: ['email'] }, { required: ['phoneNumber'] }],
+  } as const;
+
+  interface CompleteBody {
+    credential: PasskeyCredentialResponse;
+    verification?: PasskeyVerificationCodes;
+  }
+
+  const completeBody = {
+    type: 'object',
+    required: ['credential'],
+    additionalProperties: false,
+    properties: {
+      credential: {
+        type: 'object',
+        required: ['id', 'rawId', 'type', 'response'],
+        additionalProperties: false,
+        properties: {
+          id: { type: 'string' },
+          rawId: { type: 'string' },
+          type: { type: 'string' },
+          authenticatorAttachment: { type: 'string' },
+          clientExtensionResults: { type: 'object' },
+          response: {
+            type: 'object',
+            required: ['clientDataJSON'],
+            additionalProperties: false,
+            properties: {
+              clientDataJSON: { type: 'string' },
+              attestationObject: { type: 'string' },
+              authenticatorData: { type: 'string' },
+              signature: { type: 'string' },
+              userHandle: { type: 'string' },
+            },
+          },
+        },
+      },
+      // One code per identifier, at most 10 characters (Auth0 rejects longer ones).
+      verification: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          email: { type: 'string', minLength: 1, maxLength: 10 },
+          phone: { type: 'string', minLength: 1, maxLength: 10 },
+        },
+      },
+    },
+  } as const;
+  ```
+
+  </details>
+
+- **Rate limit the routes** with [`@fastify/rate-limit`](https://github.com/fastify/fastify-rate-limit), the signup start route the strictest. Every call sends new codes, so a route that anyone can call can be used to send messages to any address or number. Do not rely only on Auth0's limits: also limit per email address or phone number, add a bot check (for example a CAPTCHA), and accept only the phone country codes you serve. The other two routes call Auth0 too, so give them a higher limit. A start call can also fail because the address already has an account (as a `PasskeyRegisterError`), so the signup route can be used to find out whether an address is registered: this is another reason to limit it. The default store is in memory, per process: use a shared store when you run several instances.
+
+  ```ts
+  import rateLimit from '@fastify/rate-limit';
+
+  // Await it, and register it before the routes: a route defined before the plugin has loaded is silently not limited.
+  await fastify.register(rateLimit, { global: false });
+
+  fastify.post<{ Body: PasskeyRegisterOptions }>(
+    '/api/passkey/signup/start',
+    { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } },
+    async (request, reply) => {
+      // ...
+    }
+  );
+  ```
+
+- **Set `trustProxy`** to the number of proxies in front of your app (for example `1`), or to their addresses, so that `request.ip` is the user's address. Do not set it to `true`: that trusts every `X-Forwarded-For` entry, so a client can choose its own address and get around the rate limit. Auth0 uses the `auth0-forwarded-for` header only for applications with **Trust Token Endpoint IP Header** turned on (**Advanced Settings** > **OAuth**), and `startSignup()` rejects a value that is not a valid IP address.
+- **Accept only requests from your own page.** The routes write cookies, so refuse a `POST` that comes from another site. `fetch()` always sends `Origin` with a `POST`, and a page on another site cannot fake it. For example, for the routes under `/api/`:
+
+  ```ts
+  const appOrigin = new URL('<APP_BASE_URL>').origin;
+
+  fastify.addHook('onRequest', async (request, reply) => {
+    // Look at the route that matched, not at `request.url`: the router also matches a path such as /%61pi/...
+    const route = request.routeOptions.url ?? '';
+    if (request.method === 'POST' && route.startsWith('/api/') && request.headers.origin !== appOrigin) {
+      return reply.code(403).send({ status: 'forbidden' });
+    }
+  });
+  ```
+
+- **Send one complete request at a time**, for example by disabling the submit button while a request is pending, and cap the wrong-code retries in the browser (the example stops after 5). Parallel requests can use up the attempts Auth0 allows.
+- **Never log the credential, the codes or a whole error.** Log `error.cause?.error`, or `error.cause?.message` for a server or network failure, instead.
 
 ## Login using Custom Token Exchange
 

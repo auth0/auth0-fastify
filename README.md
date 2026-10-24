@@ -30,6 +30,7 @@ Jump straight to the capability you need.
 | [Protect a route with a session](./packages/auth0-fastify/README.md#4-protecting-routes) | Gate server-rendered pages behind a login session |
 | [Get the current session / user](./packages/auth0-fastify/README.md#4-protecting-routes) | Read the authenticated user with `getUser()` / `getSession()` |
 | [Call an API (`getAccessToken`)](./packages/auth0-fastify/README.md#requesting-an-access-token-to-call-an-api) | Get an access token to call APIs as the user |
+| [Passkeys](./packages/auth0-fastify/EXAMPLES.md#login-and-signup-using-passkeys) | Sign users up and log them in with passkeys, with email and phone verification codes |
 | [Custom Token Exchange](./packages/auth0-fastify/EXAMPLES.md#login-using-custom-token-exchange) | Create a session from an external token without a browser login |
 | [Impersonation via Session Transfer](./packages/auth0-fastify/EXAMPLES.md#impersonation-via-session-transfer) | Log an agent into another app as a customer, audited via the `act` claim |
 | [Multiple Custom Domains (MCD)](./packages/auth0-fastify/EXAMPLES.md#multiple-custom-domains-mcd) | Resolve the Auth0 domain per request |
@@ -56,6 +57,7 @@ The following examples can be found in the examples directory:
 
 - [Fastify Web App Example](./examples/example-fastify-web/README.md)
 - [Fastify Web App Calling an API Example](./examples/example-fastify-web-call-api/README.md)
+- [Fastify Web App with Passkeys Example](./examples/example-fastify-web-passkeys/README.md)
 - [Fastify API Example](./examples/example-fastify-api/README.md)
 
 Before running the examples, you need to install the dependencies for the monorepo and build all the packages.
