@@ -235,6 +235,7 @@ import {
   MissingRequiredArgumentError,
   MissingTransactionError,
   PasskeyGetTokenError,
+  SessionExpiredError,
 } from '@auth0/auth0-fastify';
 import type {
   PasskeyCredentialResponse,
@@ -294,12 +295,19 @@ fastify.post<{ Body: { credential: PasskeyCredentialResponse; verification?: Pas
         return reply.code(400).send({ status: 'retry', verificationRequired: error.verificationRequired ?? [] });
       }
       if (error instanceof PasskeyGetTokenError && error.statusCode === 429) {
-        return reply.code(429).send({ status: 'wait' }); // send the same request again later
+        // Send the same request again later. Auth0 can say in `retry-after` how many seconds to wait.
+        const retryAfter = Number(error.headers?.get('retry-after'));
+        return reply.code(429).send({ status: 'wait', ...(retryAfter > 0 && { retryAfterSeconds: retryAfter }) });
       }
       if (isMfaRequiredError(error)) {
         // The passkey was accepted, but the user must also complete MFA. This route stops here and keeps no token: to
         // continue, keep `error.cause.mfa_token` on the server and use `fastify.auth0Client!.mfa`.
         return { status: 'mfa_required' };
+      }
+      if (error instanceof SessionExpiredError) {
+        // The passkey was accepted, but the ID token says the session has already expired: no session, and the flow
+        // is gone. Ask the user to sign in again.
+        return reply.code(400).send({ status: 'session_expired' });
       }
       if (error instanceof MissingTransactionError) {
         return reply.code(400).send({ status: 'restart' }); // no flow, or it expired: start again
@@ -331,16 +339,17 @@ The `status` values (`complete`, `retry`, `wait` and so on) are only a conventio
 
 ### Handling errors and retries
 
-`passkey.complete()` deletes the stored flow once Auth0 has used the auth session: on success, on `mfa_required`, when Auth0 reports the auth session as used, expired or invalid, and when the ID token organization does not match. After any other failure the flow is kept, and you can call `complete()` again with the same credential.
+`passkey.complete()` deletes the stored flow once Auth0 has used the auth session: on success, on `mfa_required`, when Auth0 reports the auth session as used, expired or invalid, and when the ID token organization does not match. It also deletes the flow before it creates the session, so the flow is gone when that step fails: with a `SessionExpiredError`, or when your session store throws. After any other failure the flow is kept, and you can call `complete()` again with the same credential.
 
 | `complete()` throws | Meaning | The route answers | What the browser does |
 |---|---|---|---|
 | `PasskeyGetTokenError` with `isRetryable` | A one-time code was wrong. `error.verificationRequired` lists the identifiers that still need a code (if it is missing, ask for the same ones again). | `retry` | Ask for those codes only, then send the same credential again. |
-| `PasskeyGetTokenError` with `statusCode` 429 | Rate limited. Auth0 checks this before it uses the attempt. | `wait` | Wait (`error.headers?.get('retry-after')` says how long), then send the same request again. |
+| `PasskeyGetTokenError` with `statusCode` 429 | Rate limited. Auth0 checks this before it uses the attempt. | `wait`, with `retryAfterSeconds` when Auth0 sent a `retry-after` header | Wait that long, then send the same request again. |
 | `isMfaRequiredError(error)` | The passkey and any codes were accepted, but the user must complete MFA. No session yet. | `mfa_required` | The routes above stop here and keep no token. To continue, keep `error.cause.mfa_token` on the server (never send it to the browser) and use `fastify.auth0Client.mfa`, see [Handling an `mfa_required` response](https://github.com/auth0/auth0-auth-js/blob/main/packages/auth0-server-js/EXAMPLES.md#handling-an-mfa_required-response). The example app shows a message and points the user to OIDC Login. |
+| `SessionExpiredError` | The passkey was accepted, but the `session_expiry` claim of the ID token has already passed, so no session was created. The flow is gone. | `session_expired` | Tell the user, and send them to sign in again, for example with OIDC Login. |
 | `MissingTransactionError` | No flow to complete: none was started, it expired, a newer start replaced it (for example in another tab), or the cookie cannot be read (for example after the session secret changed). Auth0 was not called. | `restart` | Start a new flow. |
 | `MissingRequiredArgumentError`, or `PasskeyGetTokenError` with `cause.error` set to `invalid_request` | The request was incomplete or invalid: the credential cannot be read, or a code is missing or blank. The SDK checks the credential and the codes before it calls Auth0, and the flow is kept. | `invalid` | Fix the input, then send again. |
-| Anything else | Auth0 refused the exchange for another reason (see `error.cause?.error`, for example `invalid_grant` when the attempt expired or was already used), or could not be reached (the error has no `statusCode`). | `failed` | Send the same request once more, and start a new flow if that fails too. A flow that is over answers `restart` the second time. |
+| Anything else | Auth0 refused the exchange for another reason (see `error.cause?.error`, for example `invalid_grant` when the attempt expired or was already used), could not be reached (the error has no `statusCode`), or your session store threw while it saved the session. | `failed` | Send the same request once more, and start a new flow if that fails too. A flow that is over answers `restart` the second time. |
 
 Use `isRetryable` to tell a wrong code from a failure that ends the attempt, and never the HTTP status or the error description: they are the same for both, because both are an `invalid_grant`. The errors never carry the `authSession`, but their `cause` can hold an `mfa_token`, so do not log or return a whole error.
 
@@ -482,7 +491,7 @@ If `complete()` throws `MissingTransactionError` on every attempt, check that th
 
 These routes are open to anyone who can reach them, and the signup start route can make Auth0 send an email, an SMS or a voice call to any address or number. Add these before you go live:
 
-- **Validate the body, and drop what you did not ask for.** With Fastify's default settings, a schema with `additionalProperties: false` removes every property it does not list, so the browser cannot choose the `organization`, `userMetadata` or any other option of `startSignup()`, and Auth0 never gets a credential field it rejects. Add `{ schema: { body: signupBody }, bodyLimit: 32 * 1024 }` to the signup start route and `{ schema: { body: completeBody }, bodyLimit: 32 * 1024 }` to the complete route. A credential is a few KB, and the default `bodyLimit` is 1 MiB.
+- **Validate the body, and drop what you did not ask for.** With Fastify's default settings, a schema with `additionalProperties: false` removes every property it does not list, so the browser cannot choose the `organization`, `userMetadata` or any other option of `startSignup()`, and Auth0 never gets a credential field it rejects. Add `{ schema: { body: signupBody }, bodyLimit: 32 * 1024 }` to the signup start route and `{ schema: { body: completeBody }, bodyLimit: 32 * 1024 }` to the complete route. A credential is a few KB, and the default `bodyLimit` is 1 MiB. `startSignup()` also accepts a `username`: if your connection signs users up by username, add it to `SignupBody`, to the `properties` of `signupBody` and to its `anyOf`, or Fastify drops it and a signup with only a `username` is refused.
 
   <details>
   <summary>The schemas</summary>

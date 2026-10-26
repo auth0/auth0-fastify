@@ -397,6 +397,13 @@ async function finish(flow, body) {
         'warn'
       );
       return;
+    case 'session_expired':
+      goHome(
+        'Auth0 accepted the passkey, but the session had already expired, so you are not logged in. ' +
+          'Use OIDC Login to sign in again.',
+        'warn'
+      );
+      return;
     case 'restart':
       goHome(`This ${flow} is over: it expired, or a newer passkey flow started in another tab. Start again.`, 'warn');
       return;

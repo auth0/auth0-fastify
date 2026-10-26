@@ -42,6 +42,7 @@ export {
   PasskeyChallengeError,
   PasskeyGetTokenError,
   MissingTransactionError,
+  SessionExpiredError,
   isMfaRequiredError,
 } from '@auth0/auth0-server-js';
 export type {

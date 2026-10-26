@@ -31,8 +31,8 @@ let verificationRequired: string[] | undefined;
 let tokenReplies: Array<() => Response | Promise<Response>> = [];
 
 const { privateKey } = await generateKeyPair('RS256');
-const idToken = () =>
-  new SignJWT({ name: 'Jane Doe', email: 'jane@example.com', email_verified: true })
+const idToken = (claims: Record<string, unknown> = {}) =>
+  new SignJWT({ name: 'Jane Doe', email: 'jane@example.com', email_verified: true, ...claims })
     .setProtectedHeader({ alg: 'RS256' })
     .setIssuer(`${BASE}/`)
     .setAudience(CLIENT_ID)
@@ -609,6 +609,31 @@ describe('complete', () => {
 
     expect(res.json()).toEqual({ status: 'mfa_required' });
     expect(res.body + JSON.stringify(res.headers)).not.toContain('secret-mfa-token');
+  });
+
+  test('answers session_expired when the ID token says the session has expired, with no session and no flow left', async () => {
+    const app = await buildApp();
+    const start = await post(app, '/api/passkey/login/start');
+    tokenReplies.push(async () =>
+      HttpResponse.json({
+        access_token: 'access-token',
+        id_token: await idToken({ session_expiry: Math.floor(Date.now() / 1000) - 60 }),
+        expires_in: 3600,
+        token_type: 'Bearer',
+      })
+    );
+
+    const res = await post(app, '/api/passkey/complete', { credential: loginCredential }, jar(start));
+    expect([res.statusCode, res.json()]).toEqual([400, { status: 'session_expired' }]);
+
+    const cookies = jar(start, res);
+    const session = await app.inject({ method: 'GET', url: '/api/session', headers: { cookie: cookies } });
+    expect(session.json()).toEqual({ user: null });
+
+    // The SDK deleted the flow before it got to the session, so the same request now answers restart.
+    const again = await post(app, '/api/passkey/complete', { credential: loginCredential }, cookies);
+    expect(again.json()).toEqual({ status: 'restart' });
+    expect(calls.token).toHaveLength(1);
   });
 
   test('answers restart, without calling Auth0, when there is no flow', async () => {

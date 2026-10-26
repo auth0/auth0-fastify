@@ -19,6 +19,7 @@ import fastifyAuth0, {
   PasskeyChallengeError,
   PasskeyGetTokenError,
   PasskeyRegisterError,
+  SessionExpiredError,
 } from './index.js';
 import * as sdk from './index.js';
 import type {
@@ -244,12 +245,19 @@ function buildApp(overrides: Partial<PluginOptions> = {}): FastifyInstance {
           return reply.code(400).send({ status: 'retry', verificationRequired: error.verificationRequired ?? [] });
         }
         if (error instanceof PasskeyGetTokenError && error.statusCode === 429) {
-          return reply.code(429).send({ status: 'wait' }); // send the same request again later
+          // Send the same request again later. Auth0 can say in `retry-after` how many seconds to wait.
+          const retryAfter = Number(error.headers?.get('retry-after'));
+          return reply.code(429).send({ status: 'wait', ...(retryAfter > 0 && { retryAfterSeconds: retryAfter }) });
         }
         if (isMfaRequiredError(error)) {
           // The passkey was accepted, but the user must also complete MFA. This route stops here and keeps no token: to
           // continue, keep `error.cause.mfa_token` on the server and use `fastify.auth0Client!.mfa`.
           return { status: 'mfa_required' };
+        }
+        if (error instanceof SessionExpiredError) {
+          // The passkey was accepted, but the ID token says the session has already expired: no session, and the flow
+          // is gone. Ask the user to sign in again.
+          return reply.code(400).send({ status: 'session_expired' });
         }
         if (error instanceof MissingTransactionError) {
           return reply.code(400).send({ status: 'restart' }); // no flow, or it expired: start again
@@ -619,6 +627,70 @@ test('a temporary Auth0 failure keeps the flow, so sending the same request agai
   expect(calls.token).toHaveLength(2);
 });
 
+test('a rate limited complete answers wait with the seconds from retry-after, when Auth0 sent them', async () => {
+  const app = buildApp();
+  const start = await post(app, '/api/passkey/login/start', {});
+  const limited = { error: 'too_many_requests', error_description: 'Too Many Requests' };
+  tokenReplies.push(
+    () => HttpResponse.json(limited, { status: 429, headers: { 'retry-after': '7' } }),
+    () => HttpResponse.json(limited, { status: 429 })
+  );
+
+  const withSeconds = await post(app, '/api/passkey/complete', { credential: loginCredential }, jar(start));
+  expect([withSeconds.statusCode, withSeconds.json()]).toEqual([429, { status: 'wait', retryAfterSeconds: 7 }]);
+
+  const withoutSeconds = await post(app, '/api/passkey/complete', { credential: loginCredential }, jar(start));
+  expect([withoutSeconds.statusCode, withoutSeconds.json()]).toEqual([429, { status: 'wait' }]);
+});
+
+// `complete()` deletes the flow before it creates the session, so the flow is gone if that step fails.
+
+test('a session_expiry that has passed creates no session and ends the flow: session_expired, then restart', async () => {
+  const app = buildApp();
+  const start = await post(app, '/api/passkey/login/start', {});
+  tokenReplies.push(async () =>
+    HttpResponse.json({
+      access_token: 'access-token',
+      id_token: await generateToken(domain, 'auth0|passkey-user', clientId, undefined, undefined, undefined, {
+        session_expiry: Math.floor(Date.now() / 1000) - 60,
+      }),
+      expires_in: 60,
+      token_type: 'Bearer',
+    })
+  );
+
+  const first = await post(app, '/api/passkey/complete', { credential: loginCredential }, jar(start));
+  expect([first.statusCode, first.json()]).toEqual([400, { status: 'session_expired' }]);
+  expect(sessionCookie(first)).toBeUndefined();
+  expect(attributes(flowCookie(first)!)).toMatchObject({ 'max-age': '0' });
+
+  const second = await post(app, '/api/passkey/complete', { credential: loginCredential }, jar(start, first));
+  expect(second.json()).toEqual({ status: 'restart' });
+  expect(calls.token).toHaveLength(1); // Auth0 was not called again
+});
+
+test('a session store that throws also ends the flow: failed, then restart', async () => {
+  const app = buildApp({
+    sessionStore: {
+      get: async () => undefined,
+      set: async () => {
+        throw new Error('the store is down');
+      },
+      delete: async () => {},
+      deleteByLogoutToken: async () => {},
+    },
+  });
+  const start = await post(app, '/api/passkey/login/start', {});
+
+  const first = await post(app, '/api/passkey/complete', { credential: loginCredential }, jar(start));
+  expect([first.statusCode, first.json()]).toEqual([400, { status: 'failed' }]);
+  expect(attributes(flowCookie(first)!)).toMatchObject({ 'max-age': '0' });
+
+  const second = await post(app, '/api/passkey/complete', { credential: loginCredential }, jar(start, first));
+  expect(second.json()).toEqual({ status: 'restart' });
+  expect(calls.token).toHaveLength(1);
+});
+
 // ─── Errors, seen from the SDK directly ───────────────────────────────────────────────────────
 
 test('mfa_required: no session, the flow is cleared, and isMfaRequiredError tells it apart', async () => {
@@ -791,6 +863,7 @@ test('the package root exports the passkey errors and helpers', () => {
     'PasskeyChallengeError',
     'PasskeyGetTokenError',
     'MissingTransactionError',
+    'SessionExpiredError',
     'isMfaRequiredError',
   ] as const) {
     expect(sdk[name], name).toBeTypeOf('function');

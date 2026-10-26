@@ -3,6 +3,7 @@ import {
   MissingRequiredArgumentError,
   MissingTransactionError,
   PasskeyGetTokenError,
+  SessionExpiredError,
 } from '@auth0/auth0-fastify';
 import type {
   PasskeyCredentialResponse,
@@ -82,7 +83,7 @@ export const completeBody = {
 export interface CompleteFailure {
   httpStatus: number;
   body: {
-    status: 'retry' | 'invalid' | 'wait' | 'mfa_required' | 'restart' | 'failed';
+    status: 'retry' | 'invalid' | 'wait' | 'mfa_required' | 'session_expired' | 'restart' | 'failed';
     message?: string;
     verificationRequired?: PasskeyVerificationIdentifier[];
     retryAfterSeconds?: number;
@@ -98,6 +99,11 @@ export function completeFailure(error: unknown): CompleteFailure {
     // The passkey (and the codes) were accepted, but the user must complete MFA, which this example does not include.
     // Never send `error.cause.mfa_token` to the browser.
     return { httpStatus: 200, body: { status: 'mfa_required' } };
+  }
+  if (error instanceof SessionExpiredError) {
+    // The passkey was accepted, but the ID token says the session has already expired, so no session was created.
+    // The SDK has already deleted the flow: the user signs in again.
+    return { httpStatus: 400, body: { status: 'session_expired' } };
   }
   if (error instanceof PasskeyGetTokenError && error.isRetryable) {
     // A wrong code. Ask again for the identifiers still listed, and send the same credential.
@@ -120,7 +126,8 @@ export function completeFailure(error: unknown): CompleteFailure {
     return { httpStatus: 400, body: { status: 'restart' } };
   }
   // Usually the end of the attempt (too many wrong codes, the time ran out). After a server or network error the SDK
-  // keeps the flow, so the browser sends the same request once more before it starts again.
+  // keeps the flow, so the browser sends the same request once more before it starts again. A session store that
+  // throws also lands here, but the flow is gone by then: the second request answers `restart`.
   return { httpStatus: 400, body: { status: 'failed', message: describeError(error) } };
 }
 
