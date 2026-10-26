@@ -39,7 +39,7 @@ Rename `.env.example` to `.env` here and fill in the values:
 | `AUTH0_DOMAIN` | Your custom domain, for example `login.example.com`. |
 | `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET` | From the application. |
 | `AUTH0_SESSION_SECRET` | The key that encrypts the session and passkey cookies. Generate one with `openssl rand -hex 64`. |
-| `APP_BASE_URL` | The full address of this app, with `https://` (or `http://`), for example `https://app.login.example.com`. The page must be opened at exactly this address. |
+| `APP_BASE_URL` | The full address of this app, with its scheme, for example `https://app.login.example.com`. Passkeys need `https://` (see [Where to run it](#where-to-run-it)); `http://` only works for the OIDC login, as in the other examples. The page must be opened at exactly this address. |
 | `AUTH0_CONNECTION` | The connection with the Passkey method. Optional: the Default Directory is used when it is empty. |
 | `TRUST_PROXY` | The IP addresses or CIDR ranges of the reverse proxies in front of the app, comma separated, for example `127.0.0.1` or `10.0.0.0/8` (see below). Default `false`. Never `true` (a client could then choose its own IP address) or a number (current Fastify versions ignore it). |
 | `PORT` | The port the app listens on. Default `3000`. |
