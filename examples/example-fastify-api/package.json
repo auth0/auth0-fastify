@@ -14,7 +14,7 @@
     },
     "dependencies": {
         "@auth0/auth0-fastify-api": "*",
-        "dotenv": "^16.4.7",
+        "dotenv": "^17.4.2",
         "fastify": "^5.2.1"
     }
 }
