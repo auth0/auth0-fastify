@@ -219,7 +219,7 @@ Every passkey flow takes two requests, because the WebAuthn calls (`navigator.cr
 1. The browser asks your server to start. Your server calls `passkey.startSignup()` or `passkey.startLogin()` and returns `authnParamsPublicKey`, the options for the browser call.
 2. The browser runs its call and sends the credential back. Your server calls `passkey.complete()`, which exchanges it for tokens and writes the session.
 
-Between the two requests the SDK keeps the flow, including the Auth0 `authSession`, in the encrypted `HttpOnly` cookie `__a0_passkey_tx` (60 seconds, or 15 minutes when the signup needs codes). The `authSession` never reaches your code or the browser, and a new start replaces the pending flow in that browser. Serve the page and these routes from the same origin, so that the browser sends the cookies back on its own.
+Between the two requests the SDK keeps the flow, including the Auth0 `authSession`, in the encrypted `HttpOnly` cookie `__a0_passkey_tx`, for as long as Auth0 allows the flow (the `timeout` it returns with the options: currently 60 seconds, or 15 minutes when the signup needs codes). The `authSession` never reaches your code or the browser, and a new start replaces the pending flow in that browser. Serve the page and these routes from the same origin, so that the browser sends the cookies back on its own.
 
 > [!WARNING]
 > Pass `{ request, reply }` as the second argument of every passkey call, so the SDK can read and write that cookie. Without it the call throws `MissingStoreOptionsError`, and `startSignup()` has already reached Auth0 by then (as of the `@auth0/auth0-server-js` 1.17.0 that the plugin builds on), so the codes may already be on their way.
@@ -251,6 +251,8 @@ const forwardIp = (request: FastifyRequest) =>
 
 // 1a. Start a signup. When the connection verifies the email address or phone number, Auth0 sends the codes now.
 fastify.post<{ Body: PasskeyRegisterOptions }>('/api/passkey/signup/start', async (request, reply) => {
+  // `request.body` is the browser's choice: validate it first (see "Securing the routes"), or it can set options such
+  // as `organization` and `userMetadata`. The connection (`realm`) comes from the server.
   const { authnParamsPublicKey, verificationRequired } = await fastify.auth0Client!.passkey.startSignup(
     { ...request.body, realm },
     { request, reply },
@@ -295,7 +297,9 @@ fastify.post<{ Body: { credential: PasskeyCredentialResponse; verification?: Pas
         return reply.code(429).send({ status: 'wait' }); // send the same request again later
       }
       if (isMfaRequiredError(error)) {
-        return { status: 'mfa_required' }; // continue with fastify.auth0Client!.mfa
+        // The passkey was accepted, but the user must also complete MFA. This route stops here and keeps no token: to
+        // continue, keep `error.cause.mfa_token` on the server and use `fastify.auth0Client!.mfa`.
+        return { status: 'mfa_required' };
       }
       if (error instanceof MissingTransactionError) {
         return reply.code(400).send({ status: 'restart' }); // no flow, or it expired: start again
@@ -307,13 +311,12 @@ fastify.post<{ Body: { credential: PasskeyCredentialResponse; verification?: Pas
         return reply.code(400).send({ status: 'invalid' }); // for example a missing code: fix the input, send again
       }
 
-      // Log a summary of an Auth0 error, never the whole error: its `cause` can hold an `mfa_token`. Other errors
-      // (a store failure, a bug) are safe to log in full. A server or network failure has no `cause.error`, only a
-      // `cause.message`.
+      // Log a summary, never the whole error: the `cause` of an Auth0 error can hold an `mfa_token`, and the error of
+      // a session store can hold the session. A server or network failure has no `cause.error`, only `cause.message`.
       request.log.warn(
         error instanceof PasskeyGetTokenError
           ? { errorCode: error.cause?.error || error.cause?.message }
-          : { err: error },
+          : { errorMessage: error instanceof Error ? error.message : String(error) },
         'passkey.complete() failed'
       );
       return reply.code(400).send({ status: 'failed' });
@@ -334,7 +337,7 @@ The `status` values (`complete`, `retry`, `wait` and so on) are only a conventio
 |---|---|---|---|
 | `PasskeyGetTokenError` with `isRetryable` | A one-time code was wrong. `error.verificationRequired` lists the identifiers that still need a code (if it is missing, ask for the same ones again). | `retry` | Ask for those codes only, then send the same credential again. |
 | `PasskeyGetTokenError` with `statusCode` 429 | Rate limited. Auth0 checks this before it uses the attempt. | `wait` | Wait (`error.headers?.get('retry-after')` says how long), then send the same request again. |
-| `isMfaRequiredError(error)` | The passkey and any codes were accepted, but the user must complete MFA. No session yet. | `mfa_required` | Continue with `fastify.auth0Client.mfa`, see [Handling an `mfa_required` response](https://github.com/auth0/auth0-auth-js/blob/main/packages/auth0-server-js/EXAMPLES.md#handling-an-mfa_required-response). Never send `error.cause.mfa_token` to the browser. |
+| `isMfaRequiredError(error)` | The passkey and any codes were accepted, but the user must complete MFA. No session yet. | `mfa_required` | The routes above stop here and keep no token. To continue, keep `error.cause.mfa_token` on the server (never send it to the browser) and use `fastify.auth0Client.mfa`, see [Handling an `mfa_required` response](https://github.com/auth0/auth0-auth-js/blob/main/packages/auth0-server-js/EXAMPLES.md#handling-an-mfa_required-response). The example app shows a message and points the user to OIDC Login. |
 | `MissingTransactionError` | No flow to complete: none was started, it expired, a newer start replaced it (for example in another tab), or the cookie cannot be read (for example after the session secret changed). Auth0 was not called. | `restart` | Start a new flow. |
 | `MissingRequiredArgumentError`, or `PasskeyGetTokenError` with `cause.error` set to `invalid_request` | The request was incomplete or invalid: the credential cannot be read, or a code is missing or blank. The SDK checks the credential and the codes before it calls Auth0, and the flow is kept. | `invalid` | Fix the input, then send again. |
 | Anything else | Auth0 refused the exchange for another reason (see `error.cause?.error`, for example `invalid_grant` when the attempt expired or was already used), or could not be reached (the error has no `statusCode`). | `failed` | Send the same request once more, and start a new flow if that fails too. A flow that is over answers `restart` the second time. |
@@ -352,7 +355,7 @@ When the connection verifies identifiers at signup, `startSignup()` returns `ver
 - Send a code for every identifier in the list (a missing or blank one is answered with `invalid`).
 - After a wrong code, ask again only for the identifiers in `error.verificationRequired`, and send the **same** credential, kept in page memory: the user sees no second passkey prompt. The SDK keeps the shorter list too.
 - To send new codes, call the signup start route again before the passkey exists. That starts a new flow and sends new codes: the user enters the newest ones, and the passkey is created with the options from the latest response.
-- The user has 15 minutes to enter the codes, retries included. Any other passkey flow started in that browser, in any tab, replaces the pending signup, which can then no longer be completed.
+- The user has 15 minutes to enter the codes, retries included (Auth0's current `timeout` for a signup with codes). Any other passkey flow started in that browser, in any tab, replaces the pending signup, which can then no longer be completed.
 - To choose how the phone code is delivered, pass `deliveryMethod` (`'text'` or `'voice'`) with the `phoneNumber`. Leave it out to let Auth0 use the channel the connection supports (SMS when it supports both or none). A channel that the connection does not support makes the start call fail.
 
 Only the identifiers you pass are verified, using the connection's signup verification settings: an email address must be set up for verification with a one-time code (a verification link does not use this flow), and so must a phone number. See the [server SDK documentation](https://github.com/auth0/auth0-auth-js/blob/main/packages/auth0-server-js/EXAMPLES.md#verifying-the-email-or-phone-number-at-signup) for the details.

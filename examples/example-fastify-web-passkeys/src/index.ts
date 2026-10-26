@@ -1,6 +1,6 @@
 import Fastify, { type FastifyError, type FastifyRequest } from 'fastify';
 import fastifyStatic from '@fastify/static';
-import rateLimit from '@fastify/rate-limit';
+import rateLimit, { normalizeIP } from '@fastify/rate-limit';
 import fastifyAuth0, { PasskeyChallengeError, PasskeyRegisterError } from '@auth0/auth0-fastify';
 import 'dotenv/config';
 import { isIP } from 'node:net';
@@ -59,9 +59,31 @@ function trustedProxies(value = ''): string[] | false {
   return proxies;
 }
 
+// The origin of APP_BASE_URL. `new URL()` accepts "localhost:3000" (its scheme is "localhost:"), so check that too.
+function originOf(appBaseUrl: string): string {
+  try {
+    const { origin, protocol } = new URL(appBaseUrl);
+    if (protocol === 'http:' || protocol === 'https:') {
+      return origin;
+    }
+  } catch {
+    // Not a URL at all: reported below.
+  }
+  throw new Error(
+    'APP_BASE_URL must be a full URL with http:// or https://, for example https://login.example.com ' +
+      `(got "${appBaseUrl}").`
+  );
+}
+
 // Every passkey route calls Auth0 for anyone who can reach it, and the signup start also sends messages, so it gets the
 // strictest limit. A credential is a few KB, so a small body limit keeps these routes cheap.
 const limits = (max: number) => ({ bodyLimit: 32 * 1024, config: { rateLimit: { max, timeWindow: '1 minute' } } });
+
+// What the user can fix in the signup form. Ajv's own text for these two fields holds a regular expression.
+const FIELD_HELP: Record<string, string> = {
+  '/email': 'Enter a valid email address.',
+  '/phoneNumber': 'Enter the phone number with the country code, for example +14155550100.',
+};
 
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
@@ -84,12 +106,7 @@ export async function buildApp() {
   }
 
   const appBaseUrl = process.env.APP_BASE_URL as string;
-  let appOrigin: string;
-  try {
-    appOrigin = new URL(appBaseUrl).origin;
-  } catch {
-    throw new Error(`APP_BASE_URL must be a full URL, for example https://login.example.com (got "${appBaseUrl}").`);
-  }
+  const appOrigin = originOf(appBaseUrl);
 
   const fastify = Fastify({
     logger: process.env.NODE_ENV !== 'test',
@@ -128,11 +145,18 @@ export async function buildApp() {
   // calls. Set it before the routes, so that every route uses it.
   fastify.setErrorHandler<FastifyError>((error, request, reply) => {
     if (error.validation) {
-      return reply.code(400).send({ status: 'invalid', message: error.message });
+      const help = FIELD_HELP[error.validation[0]?.instancePath ?? ''];
+      return reply.code(400).send({ status: 'invalid', message: help ?? error.message });
     }
     if (error.statusCode === 429) {
-      // From the rate limit below, or from Auth0 (a PasskeyRegisterError or PasskeyChallengeError).
-      return reply.code(429).send({ status: 'rate_limited', message: describeError(error) });
+      // From the rate limit below, or from Auth0 (a PasskeyRegisterError or PasskeyChallengeError). The rate limit
+      // says in `retry-after` how long to wait, and the page shows it.
+      const retryAfter = Number(reply.getHeader('retry-after'));
+      return reply.code(429).send({
+        status: 'rate_limited',
+        message: describeError(error),
+        ...(retryAfter > 0 && { retryAfterSeconds: retryAfter }),
+      });
     }
     if (error instanceof PasskeyRegisterError || error instanceof PasskeyChallengeError) {
       // Nothing was stored. Auth0 rejected the request, for example because the user exists or a code could not be
@@ -147,10 +171,14 @@ export async function buildApp() {
     root: path.join(__dirname, '../public'),
   });
 
-  // `global: false`: only the routes that ask for a limit get one. A server on a unix socket has no `request.ip`
-  // unless a trusted proxy header sets it, and the default key generator fails on that: count those requests together
-  // instead.
-  await fastify.register(rateLimit, { global: false, keyGenerator: (request) => request.ip ?? 'unknown' });
+  // `global: false`: only the routes that ask for a limit get one. The key is the user's address, and the addresses of
+  // one IPv6 /64 count as one user, because a user can choose any of them (as in the plugin's own key generator). That
+  // one fails on a request without `request.ip` (a server on a unix socket, with no trusted proxy header): count those
+  // requests together instead.
+  await fastify.register(rateLimit, {
+    global: false,
+    keyGenerator: (request) => (request.ip ? normalizeIP(request.ip, 64) : 'unknown'),
+  });
 
   fastify.register(fastifyAuth0, {
     domain: process.env.AUTH0_DOMAIN as string,

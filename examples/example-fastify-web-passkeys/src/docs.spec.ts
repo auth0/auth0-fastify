@@ -1,17 +1,33 @@
 // The code in the "Login and Signup using Passkeys" section of the Fastify EXAMPLES.md is code that people copy. This
 // checks that its schemas and browser helpers are the ones of this example, and runs the two snippets that nothing
 // else tests: the browser flow and the Origin check. The routes in that section are checked by passkey.spec.ts of the
-// package.
+// package. It reads EXAMPLES.md of the SDK package from this repository: delete this file in a copy of the example.
 import { readFileSync } from 'node:fs';
 import Fastify from 'fastify';
 import { describe, expect, test } from 'vitest';
 
-const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8');
+// A checkout on Windows can have CRLF line endings.
+const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 
-const docs = read('../../../packages/auth0-fastify/EXAMPLES.md');
-const section = docs.slice(
-  docs.indexOf('\n## Login and Signup using Passkeys\n'),
-  docs.indexOf('\n## Login using Custom Token Exchange\n')
+/**
+ * The text from one marker up to another. Both must be there, in this order: a check against an empty text would pass
+ * whatever the docs say.
+ */
+function between(text: string, from: string, to: string): string {
+  const start = text.indexOf(from);
+  const end = text.indexOf(to);
+  if (start === -1 || end <= start) {
+    throw new Error(
+      `The docs are compared with the text between two markers: both must be found, in this order. "${from}", "${to}"`
+    );
+  }
+  return text.slice(start, end);
+}
+
+const section = between(
+  read('../../../packages/auth0-fastify/EXAMPLES.md'),
+  '\n## Login and Signup using Passkeys\n',
+  '\n## Login using Custom Token Exchange\n'
 );
 
 /** The fenced code blocks of the section. A block inside a list item loses the indentation of the list item. */
@@ -45,9 +61,7 @@ const block = (contains: string) => {
 
 describe('the code in the docs is the code of this example', () => {
   test('the schemas', () => {
-    const source = read('./passkey.ts');
-    const schemas = source
-      .slice(source.indexOf('export type SignupBody'), source.indexOf('export interface CompleteFailure'))
+    const schemas = between(read('./passkey.ts'), 'export type SignupBody', 'export interface CompleteFailure')
       .replace(/^export /gm, '')
       .trimEnd();
 
@@ -55,9 +69,7 @@ describe('the code in the docs is the code of this example', () => {
   });
 
   test('the browser helpers', () => {
-    const source = read('../public/webauthn.js');
-    const helpers = source
-      .slice(source.indexOf('// Auth0 sends binary values'), source.indexOf('// A sentence for an error'))
+    const helpers = between(read('../public/webauthn.js'), '// Auth0 sends binary values', '// A sentence for an error')
       .replace(/^export /gm, '')
       .trimEnd();
 
@@ -233,6 +245,15 @@ describe('the Origin check in the docs', () => {
   test.each([
     ['no Origin header', '/api/passkey/login/start', {}, 403],
     ['another origin', '/api/passkey/login/start', { origin: 'https://evil.example' }, 403],
+    [
+      'an origin that only starts like the app origin',
+      '/api/passkey/login/start',
+      { origin: 'http://localhost:3000.evil.example' },
+      403,
+    ],
+    ['another port', '/api/passkey/login/start', { origin: 'http://localhost:3001' }, 403],
+    ['another scheme', '/api/passkey/login/start', { origin: 'https://localhost:3000' }, 403],
+    ['the opaque origin "null"', '/api/passkey/login/start', { origin: 'null' }, 403],
     ['a percent-encoded path', '/%61pi/passkey/login/start', {}, 403],
     ['the app origin', '/api/passkey/login/start', { origin: 'http://localhost:3000' }, 200],
     ['a route outside /api/, like a server-to-server call', '/auth/backchannel-logout', {}, 200],

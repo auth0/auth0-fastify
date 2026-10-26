@@ -374,12 +374,15 @@ async function finish(flow, body) {
       askForCodes(pending, tryAgain);
       return;
     }
-    case 'wait': {
-      // Auth0 rate limited the request before it used the attempt: the same request can be sent again.
+    case 'wait':
+    case 'rate_limited': {
+      // Auth0 (wait) or this app (rate_limited) refused the request before it used the attempt: the flow is still
+      // open, and the same request can be sent again.
       resendLater = () => finish(flow, body);
       const seconds = result.retryAfterSeconds;
       const when = seconds ? `Try again in ${seconds} seconds.` : 'Wait a moment, then try again.';
-      $('wait-text').textContent = `Auth0 is rate limiting these requests. ${when}`;
+      const who = result.status === 'wait' ? 'Auth0 is rate limiting these requests.' : 'Too many requests.';
+      $('wait-text').textContent = `${who} ${when}`;
       show('wait');
       return;
     }

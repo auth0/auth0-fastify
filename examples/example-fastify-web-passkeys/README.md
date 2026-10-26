@@ -39,7 +39,7 @@ Rename `.env.example` to `.env` here and fill in the values:
 | `AUTH0_DOMAIN` | Your custom domain, for example `login.example.com`. |
 | `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET` | From the application. |
 | `AUTH0_SESSION_SECRET` | The key that encrypts the session and passkey cookies. Generate one with `openssl rand -hex 64`. |
-| `APP_BASE_URL` | The address of this app, for example `https://app.login.example.com`. The page must be opened at exactly this address. |
+| `APP_BASE_URL` | The full address of this app, with `https://` (or `http://`), for example `https://app.login.example.com`. The page must be opened at exactly this address. |
 | `AUTH0_CONNECTION` | The connection with the Passkey method. Optional: the Default Directory is used when it is empty. |
 | `TRUST_PROXY` | The IP addresses or CIDR ranges of the reverse proxies in front of the app, comma separated, for example `127.0.0.1` or `10.0.0.0/8` (see below). Default `false`. Never `true` (a client could then choose its own IP address) or a number (current Fastify versions ignore it). |
 | `PORT` | The port the app listens on. Default `3000`. |
@@ -48,7 +48,25 @@ Rename `.env.example` to `.env` here and fill in the values:
 
 Auth0 uses your custom domain as the WebAuthn relying party ID, and a browser only lets a page use a passkey when the page is served over HTTPS from that domain or one of its subdomains. For the custom domain `login.example.com`, use a subdomain such as `https://app.login.example.com`. Auth0 serves the custom domain itself, so the app cannot be there. `http://localhost:3000` does not work: the browser refuses the passkey with a `SecurityError`.
 
-To run it on your machine, point the hostname at `127.0.0.1` (a `hosts` file entry), and put a reverse proxy in front of the app that serves that hostname over HTTPS with a locally trusted certificate, for example one made with [mkcert](https://github.com/FiloSottile/mkcert). Forward it to the app on `PORT`, set `APP_BASE_URL` to the proxy's address (include the port when it is not 443), and set `TRUST_PROXY=loopback`, so that the app takes the user's IP address from the proxy on your machine (it connects from `127.0.0.1` or `::1`).
+To run it on your machine, with the hostname `app.login.example.com` (use a subdomain of your own custom domain):
+
+1. Point the hostname at `127.0.0.1` with a `hosts` file entry: `127.0.0.1 app.login.example.com`.
+2. Make a locally trusted certificate with [mkcert](https://github.com/FiloSottile/mkcert): run `mkcert -install` once, then `mkcert app.login.example.com`. It writes `app.login.example.com.pem` and `app.login.example.com-key.pem`.
+3. Put a reverse proxy in front of the app. Any proxy works. With [Caddy](https://caddyserver.com), save this as `Caddyfile` next to the two certificate files, and start it with `caddy run`. It serves `https://app.login.example.com:8443` and forwards to the app on port 3000:
+
+   ```
+   {
+     auto_https disable_redirects
+   }
+
+   app.login.example.com:8443 {
+     bind 127.0.0.1
+     tls app.login.example.com.pem app.login.example.com-key.pem
+     reverse_proxy 127.0.0.1:3000
+   }
+   ```
+
+4. In `.env`, set `APP_BASE_URL=https://app.login.example.com:8443` (the port is part of the address) and `TRUST_PROXY=loopback`, so that the app takes the user's IP address from the proxy on your machine (it connects from `127.0.0.1` or `::1`).
 
 ## Run
 
@@ -91,8 +109,9 @@ The browser never sees the Auth0 `authSession`. The SDK keeps it in the encrypte
 | This browser does not support passkeys | The page is not in a secure context (HTTPS), or the browser has no WebAuthn. |
 | The signup or login does not start, with a message from Auth0 | Check that the connection has the Passkey method turned on and is enabled for the application, that `AUTH0_CONNECTION` is its name (or it is the Default Directory), that `AUTH0_DOMAIN` is the custom domain, and that the application uses the Client Secret method. |
 | The passkey prompt works, but finishing fails with a message from Auth0 | Turn on the **Passkey** grant for the application. |
-| `This signup is over` or `This login is over` | The flow expired (60 seconds, or 15 minutes when codes are needed), or a newer passkey flow started in another tab. Start again. |
+| `This signup is over` or `This login is over` | The flow expired (Auth0 currently allows 60 seconds, or 15 minutes when codes are needed), or a newer passkey flow started in another tab. Start again. |
 | `Auth0 is rate limiting these requests` | Wait as told, then use **Try again**. |
+| `Too many requests` | This app's own rate limit (per IP address and minute: 5 signup starts, 30 login starts, 30 completions). Wait as told, then use **Try again**. The flow is kept. |
 | `MFA` message after the passkey was accepted | The user must complete MFA, which this example does not include. |
 
 ## Tests
@@ -101,4 +120,4 @@ The browser never sees the Auth0 `authSession`. The SDK keeps it in the encrypte
 npm test
 ```
 
-The tests run against a fake Auth0 (no tenant needed): the routes, the page and its headers, every `complete` status, the rate limit and the IP forwarding, and the WebAuthn helpers.
+The tests run against a fake Auth0 (no tenant needed): the routes, the page and its headers, every `complete` status, the rate limits and the IP forwarding, and the WebAuthn helpers. `src/docs.spec.ts` also checks the code of the SDK's EXAMPLES.md against this example, so it needs this repository: delete it in a copy of the example. The page script `public/app.js` has no automated test here, so walk through [What to try](#what-to-try) after you change it.

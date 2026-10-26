@@ -187,6 +187,7 @@ const forwardIp = (request: FastifyRequest) =>
   request.ip ? { headers: { 'auth0-forwarded-for': request.ip } } : undefined;
 
 function buildApp(overrides: Partial<PluginOptions> = {}): FastifyInstance {
+  // Tests only: `true` lets a test choose the user IP address with X-Forwarded-For. An app lists its proxies instead.
   const fastify = Fastify({ trustProxy: true });
 
   fastify.register(fastifyAuth0, {
@@ -200,6 +201,8 @@ function buildApp(overrides: Partial<PluginOptions> = {}): FastifyInstance {
 
   // 1a. Start a signup. When the connection verifies the email address or phone number, Auth0 sends the codes now.
   fastify.post<{ Body: PasskeyRegisterOptions }>('/api/passkey/signup/start', async (request, reply) => {
+    // `request.body` is the browser's choice: validate it first (see "Securing the routes"), or it can set options such
+    // as `organization` and `userMetadata`. The connection (`realm`) comes from the server.
     const { authnParamsPublicKey, verificationRequired } = await fastify.auth0Client!.passkey.startSignup(
       { ...request.body, realm },
       { request, reply },
@@ -244,7 +247,9 @@ function buildApp(overrides: Partial<PluginOptions> = {}): FastifyInstance {
           return reply.code(429).send({ status: 'wait' }); // send the same request again later
         }
         if (isMfaRequiredError(error)) {
-          return { status: 'mfa_required' }; // continue with fastify.auth0Client!.mfa
+          // The passkey was accepted, but the user must also complete MFA. This route stops here and keeps no token: to
+          // continue, keep `error.cause.mfa_token` on the server and use `fastify.auth0Client!.mfa`.
+          return { status: 'mfa_required' };
         }
         if (error instanceof MissingTransactionError) {
           return reply.code(400).send({ status: 'restart' }); // no flow, or it expired: start again
@@ -256,13 +261,12 @@ function buildApp(overrides: Partial<PluginOptions> = {}): FastifyInstance {
           return reply.code(400).send({ status: 'invalid' }); // for example a missing code: fix the input, send again
         }
 
-        // Log a summary of an Auth0 error, never the whole error: its `cause` can hold an `mfa_token`. Other errors
-        // (a store failure, a bug) are safe to log in full. A server or network failure has no `cause.error`, only a
-        // `cause.message`.
+        // Log a summary, never the whole error: the `cause` of an Auth0 error can hold an `mfa_token`, and the error of
+        // a session store can hold the session. A server or network failure has no `cause.error`, only `cause.message`.
         request.log.warn(
           error instanceof PasskeyGetTokenError
             ? { errorCode: error.cause?.error || error.cause?.message }
-            : { err: error },
+            : { errorMessage: error instanceof Error ? error.message : String(error) },
           'passkey.complete() failed'
         );
         return reply.code(400).send({ status: 'failed' });
@@ -796,15 +800,22 @@ test('the package root exports the passkey errors and helpers', () => {
 // ─── The docs ─────────────────────────────────────────────────────────────────────────────────
 
 test('the routes in EXAMPLES.md are the routes tested here', () => {
-  const docs = readFileSync(new URL('../EXAMPLES.md', import.meta.url), 'utf8');
-  const section = docs.slice(docs.indexOf('## Login and Signup using Passkeys'));
+  // A checkout on Windows can have CRLF line endings.
+  const read = (url: URL | string) => readFileSync(url, 'utf8').replace(/\r\n/g, '\n');
+  const docs = read(new URL('../EXAMPLES.md', import.meta.url));
+  const start = docs.indexOf('## Login and Signup using Passkeys');
+  expect(start, 'the passkeys section in EXAMPLES.md').toBeGreaterThan(-1);
+  const section = docs.slice(start);
+  // Each anchor must be found: a check against an empty text would pass whatever the docs say.
   const first = section.indexOf('// 1a.');
+  expect(first, 'the first route (// 1a.) in the passkeys section of EXAMPLES.md').toBeGreaterThan(-1);
   const routes = section.slice(first, section.indexOf('\n```', first));
   const inBuildApp = routes.replace(/^(?=.)/gm, '  '); // buildApp() holds the routes, indented by two spaces
 
-  const spec = readFileSync(fileURLToPath(import.meta.url), 'utf8');
+  const spec = read(fileURLToPath(import.meta.url));
   expect(spec.includes(inBuildApp), 'The routes in EXAMPLES.md differ from the routes in passkey.spec.ts').toBe(true);
 
-  const forwardIpInDocs = /^const forwardIp =[^;]*;$/m.exec(section)?.[0] ?? '';
-  expect(spec.includes(forwardIpInDocs), 'forwardIp in EXAMPLES.md differs from the one in passkey.spec.ts').toBe(true);
+  const forwardIpInDocs = /^const forwardIp =[^;]*;$/m.exec(section)?.[0];
+  expect(forwardIpInDocs, 'the forwardIp helper in the passkeys section of EXAMPLES.md').toBeDefined();
+  expect(spec.includes(forwardIpInDocs as string), 'forwardIp in EXAMPLES.md differs from passkey.spec.ts').toBe(true);
 });

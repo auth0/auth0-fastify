@@ -192,8 +192,20 @@ describe('the page', () => {
     for (const id of ['passkey-login', 'passkey-signup', 'oidc-login']) {
       expect(res.body).toContain(`id="${id}"`);
     }
-    expect(res.headers['content-security-policy']).toContain("default-src 'self'");
+    // Each directive closes one door: content from other origins, images over plain http, plugins, <base>, framing
+    // (clickjacking), and form posts to other sites.
+    for (const directive of [
+      "default-src 'self'",
+      "img-src 'self' https: data:",
+      "object-src 'none'",
+      "base-uri 'none'",
+      "frame-ancestors 'none'",
+      "form-action 'self'",
+    ]) {
+      expect(res.headers['content-security-policy']).toContain(directive);
+    }
     expect(res.headers['x-content-type-options']).toBe('nosniff');
+    expect(res.headers['referrer-policy']).toBe('no-referrer');
   });
 
   test.each([
@@ -222,6 +234,7 @@ describe('the page', () => {
 
     expect(res.statusCode).toBe(302);
     expect(new URL(String(res.headers.location)).pathname).toBe('/authorize');
+    expect(res.headers['cache-control']).toBe('no-store');
   });
 });
 
@@ -235,11 +248,15 @@ describe('the configuration', () => {
     }
   });
 
-  test('explains an APP_BASE_URL that is not a URL', async () => {
-    process.env.APP_BASE_URL = 'login.example.com';
+  // `localhost:3000` is a valid URL for `new URL()` (the scheme is "localhost:"), so it needs its own check.
+  test.each(['login.example.com', 'login.example.com:3000', 'localhost:3000', 'ftp://login.example.com'])(
+    'explains an APP_BASE_URL that is not a full http(s) URL: %s',
+    async (value) => {
+      process.env.APP_BASE_URL = value;
 
-    await expect(buildApp()).rejects.toThrow(/APP_BASE_URL must be a full URL/);
-  });
+      await expect(buildApp()).rejects.toThrow(/APP_BASE_URL must be a full URL with http:\/\/ or https:\/\//);
+    }
+  );
 
   test('uses the default connection when AUTH0_CONNECTION is empty', async () => {
     process.env.AUTH0_CONNECTION = '';
@@ -254,6 +271,10 @@ describe('the configuration', () => {
 test.each([
   ['no Origin header', {}],
   ['another origin', { origin: 'https://evil.example' }],
+  ['an origin that only starts like the app origin', { origin: `${ORIGIN}.evil.example` }],
+  ['another port', { origin: 'http://localhost:3001' }],
+  ['another scheme', { origin: 'https://localhost:3000' }],
+  ['the opaque origin "null" (a sandboxed frame)', { origin: 'null' }],
 ])('a POST with %s is refused before it reaches Auth0', async (_label, headers) => {
   const app = await buildApp();
   const res = await app.inject({
@@ -303,6 +324,19 @@ describe('signup start', () => {
     expect(res.statusCode).toBe(400);
     expect(res.json()).toMatchObject({ status: 'invalid', message: expect.any(String) });
     expect(calls.register).toHaveLength(0);
+  });
+
+  test.each([
+    ['an email address that is not one', { email: 'jane@' }, 'Enter a valid email address.'],
+    [
+      'a phone number without the country code',
+      { email: 'jane@example.com', phoneNumber: '4155550100' },
+      'Enter the phone number with the country code, for example +14155550100.',
+    ],
+  ])('says what to fix for %s, not the text of the schema rule', async (_label, body, message) => {
+    const res = await post(await buildApp(), '/api/passkey/signup/start', body);
+
+    expect(res.json()).toEqual({ status: 'invalid', message });
   });
 
   test('refuses a text/plain body, which a cross-site page could send without a preflight', async () => {
@@ -690,15 +724,50 @@ describe('abuse limits', () => {
   test.each([
     ['/api/passkey/login/start', {}, 30],
     ['/api/passkey/complete', { credential: loginCredential }, 30],
-  ])('%s is rate limited per IP address', async (url, payload, max) => {
+  ])('%s is rate limited per IP address, and the answer says when to try again', async (url, payload, max) => {
     const app = await buildApp();
-    const statuses: number[] = [];
+    const responses = [];
     for (let i = 0; i <= max; i++) {
-      statuses.push((await post(app, url, payload)).statusCode);
+      responses.push(await post(app, url, payload));
+    }
+    const limited = responses[max];
+
+    expect(responses.slice(0, max).map((res) => res.statusCode)).not.toContain(429);
+    expect(limited?.statusCode).toBe(429);
+    expect(limited?.json()).toEqual({
+      status: 'rate_limited',
+      message: expect.any(String),
+      retryAfterSeconds: Number(limited?.headers['retry-after']),
+    });
+    expect(limited?.json().retryAfterSeconds).toBeGreaterThan(0);
+  });
+
+  /** A signup start that comes from the given IP address. */
+  const signupFrom = (app: FastifyInstance, address: string) =>
+    post(app, '/api/passkey/signup/start', { email: 'jane@example.com' }, undefined, {}, address);
+
+  test('counts each IP address on its own', async () => {
+    const app = await buildApp();
+    for (let i = 0; i < 5; i++) {
+      await signupFrom(app, '203.0.113.1');
     }
 
-    expect(statuses.slice(0, max)).not.toContain(429);
-    expect(statuses[max]).toBe(429);
+    expect((await signupFrom(app, '203.0.113.1')).statusCode).toBe(429);
+    expect((await signupFrom(app, '203.0.113.2')).statusCode).toBe(200);
+  });
+
+  test('counts the addresses of one IPv6 /64 together, because the user can choose any of them', async () => {
+    const app = await buildApp();
+    const statuses: number[] = [];
+    // Six different addresses of the network 2001:db8:1:2::/64.
+    for (let i = 1; i <= 6; i++) {
+      statuses.push((await signupFrom(app, `2001:db8:1:2::${i}`)).statusCode);
+    }
+
+    expect(statuses).toEqual([200, 200, 200, 200, 200, 429]);
+    expect(calls.register).toHaveLength(5);
+    // Another /64 has its own count.
+    expect((await signupFrom(app, '2001:db8:1:3::1')).statusCode).toBe(200);
   });
 
   test('each route is counted on its own', async () => {
