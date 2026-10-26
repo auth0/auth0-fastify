@@ -5,7 +5,7 @@
 ## Packages
 
 - [@auth0/auth0-fastify README](./packages/auth0-fastify/README.md): Web authentication SDK — registers a Fastify plugin, mounts login/logout/callback routes, manages encrypted session cookies, protects routes, and supports account linking.
-- [@auth0/auth0-fastify — Examples](./packages/auth0-fastify/EXAMPLES.md): Advanced web patterns — account linking (connect/unconnect), custom routes, interactive login without mounted routes, backchannel logout, pushed authorization requests, external session stores, Custom Token Exchange, and impersonation via Session Transfer Token.
+- [@auth0/auth0-fastify — Examples](./packages/auth0-fastify/EXAMPLES.md): Advanced web patterns — account linking (connect/unconnect), custom routes, interactive login without mounted routes, backchannel logout, pushed authorization requests, external session stores, passkey login and signup (with email and phone verification codes), Custom Token Exchange, and impersonation via Session Transfer Token.
 - [@auth0/auth0-fastify-api README](./packages/auth0-fastify-api/README.md): API protection SDK — validates bearer access tokens (RS256, rejects HS*), enforces audience/scopes, and supports DPoP.
 - [@auth0/auth0-fastify-api — Examples](./packages/auth0-fastify-api/EXAMPLES.md): Advanced API patterns — DPoP modes, On-Behalf-Of token exchange, and multi-domain configuration.
 
@@ -14,6 +14,7 @@
 - [Monorepo README](./README.md): Overview, package list, and how to install/build the workspace (`npm install`, `npm run build`) and run the examples.
 - [Fastify web app example](./examples/example-fastify-web/README.md): Runnable server-rendered web app using `@auth0/auth0-fastify`.
 - [Fastify web app calling an API example](./examples/example-fastify-web-call-api/README.md): Runnable web app that logs a user in and calls a resource server (`example-fastify-api`) on their behalf using `getAccessToken()`.
+- [Fastify web app with passkeys example](./examples/example-fastify-web-passkeys/README.md): Runnable web app with passkey login and signup, including email and phone verification codes, next to OIDC login.
 - [Fastify API example](./examples/example-fastify-api/README.md): Runnable protected API using `@auth0/auth0-fastify-api`.
 
 ## Development

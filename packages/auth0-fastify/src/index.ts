@@ -37,6 +37,30 @@ export {
   InvalidConfigurationError,
   OrganizationValidationError,
 } from '@auth0/auth0-server-js';
+export {
+  PasskeyRegisterError,
+  PasskeyChallengeError,
+  PasskeyGetTokenError,
+  MissingTransactionError,
+  SessionExpiredError,
+  isMfaRequiredError,
+} from '@auth0/auth0-server-js';
+export type {
+  PasskeyRegisterOptions,
+  PasskeyStartSignupResult,
+  PasskeyStartLoginResult,
+  PasskeyChallengeOptions,
+  PasskeyCompleteOptions,
+  PasskeyGetTokenResult,
+  PasskeyCredentialResponse,
+  PasskeyCreationOptions,
+  PasskeyRequestOptions,
+  PasskeyVerificationCodes,
+  PasskeyVerificationIdentifier,
+  PasskeyDeliveryMethod,
+  PasskeyApiErrorResponse,
+  PasskeyGetTokenApiErrorResponse,
+} from '@auth0/auth0-server-js';
 
 declare module 'fastify' {
   /**

@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Passkeys · Fastify example</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <main class="layout">
+    <header class="brand">
+      <strong>Passkey example</strong>
+      <span>Fastify + @auth0/auth0-fastify</span>
+    </header>
+
+    <section class="card" id="card">
+      <div class="notice" id="notice" role="status" hidden></div>
+
+      <!-- Logged out -->
+      <div class="view" id="view-home">
+        <h1>Welcome</h1>
+        <p class="lead">Log in or sign up with a passkey, or use Universal Login.</p>
+        <div class="stack">
+          <button class="btn btn-primary" id="passkey-login" type="button">Passkey Login</button>
+          <button class="btn btn-soft" id="passkey-signup" type="button">Passkey Signup</button>
+          <div class="divider"><span>or</span></div>
+          <a class="btn btn-outline" id="oidc-login" href="/auth/login">OIDC Login</a>
+        </div>
+        <p class="fineprint" id="no-webauthn" hidden>This browser does not support passkeys.</p>
+      </div>
+
+      <!-- Passkey signup: the profile -->
+      <form class="view" id="view-signup" novalidate hidden>
+        <button class="back" type="button" data-home>&larr; Back</button>
+        <h2>Create your account</h2>
+        <p class="lead">Enter an email address, a phone number, or both. Auth0 may send a code to verify each one.</p>
+        <label class="field">
+          <span>Email</span>
+          <input type="email" name="email" autocomplete="email" placeholder="you@example.com">
+        </label>
+        <label class="field">
+          <span>Phone number <em>optional</em></span>
+          <input type="tel" name="phoneNumber" autocomplete="tel" placeholder="+14155550100">
+        </label>
+        <label class="field" id="delivery" hidden>
+          <span>Send the phone code by</span>
+          <select name="deliveryMethod">
+            <option value="">The connection's default</option>
+            <option value="text">Text message</option>
+            <option value="voice">Voice call</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Name <em>optional</em></span>
+          <input type="text" name="name" autocomplete="name" placeholder="Jane Doe">
+        </label>
+        <button class="btn btn-primary" type="submit">Continue</button>
+      </form>
+
+      <!-- Passkey signup: one code input for each identifier in verificationRequired -->
+      <form class="view" id="view-codes" novalidate hidden>
+        <button class="back" type="button" data-home>&larr; Cancel</button>
+        <h2 id="codes-title">Enter the code</h2>
+        <p class="lead" id="codes-lead"></p>
+        <div id="code-fields"></div>
+        <button class="btn btn-primary" type="submit" id="codes-submit">Create passkey</button>
+        <button class="btn btn-link" type="button" id="resend">Send new codes</button>
+      </form>
+
+      <!-- Waiting for the browser or the server -->
+      <div class="view center" id="view-working" hidden>
+        <div class="spinner" aria-hidden="true"></div>
+        <p id="working-text" role="status"></p>
+      </div>
+
+      <!-- Rate limited: the same request can be sent again -->
+      <div class="view center" id="view-wait" hidden>
+        <p id="wait-text"></p>
+        <button class="btn btn-primary" type="button" id="wait-retry">Try again</button>
+        <button class="btn btn-link" type="button" data-home>Cancel</button>
+      </div>
+
+      <!-- Logged in -->
+      <div class="view" id="view-profile" hidden>
+        <div class="profile">
+          <div class="avatar" id="avatar"></div>
+          <div>
+            <h2 id="profile-name"></h2>
+            <p class="lead" id="profile-sub"></p>
+          </div>
+        </div>
+        <dl class="facts" id="facts"></dl>
+        <details class="claims">
+          <summary>ID token claims</summary>
+          <pre id="claims"></pre>
+        </details>
+        <a class="btn btn-outline" href="/auth/logout">Log out</a>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

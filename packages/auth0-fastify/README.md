@@ -24,6 +24,7 @@ Jump straight to the capability you need.
 | [Protect a route with a session](#4-protecting-routes) | Gate server-rendered pages behind a login session |
 | [Get the current session / user](#4-protecting-routes) | Read the authenticated user with `getUser()` / `getSession()` |
 | [Call an API (`getAccessToken`)](#requesting-an-access-token-to-call-an-api) | Get an access token to call APIs as the user |
+| [Passkeys](./EXAMPLES.md#login-and-signup-using-passkeys) | Sign users up and log them in with passkeys, with email and phone verification codes |
 | [Custom Token Exchange](./EXAMPLES.md#login-using-custom-token-exchange) | Create a session from an external token without a browser login |
 | [Impersonation via Session Transfer](./EXAMPLES.md#impersonation-via-session-transfer) | Log an agent into another app as a customer, audited via the `act` claim |
 | [Multiple Custom Domains (MCD)](./EXAMPLES.md#multiple-custom-domains-mcd) | Resolve the Auth0 domain per request |
